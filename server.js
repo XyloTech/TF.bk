@@ -23,7 +23,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Import Routes
-const authRoutes = require("./routes/authRoutes"); // Handles login, register
+const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes"); // Handles user profile & API keys
 const transactionRoutes = require("./routes/transactionRoutes"); // Handles transactions
 
