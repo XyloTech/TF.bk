@@ -1,0 +1,1 @@
+{"level":"error","message":"Authentication error: E11000 duplicate key error collection: yourdbname.users index: email_1 dup key: { email: \"maheshchitkoti@gmail.com\" }","timestamp":"2025-03-21T17:25:41.033Z"}
