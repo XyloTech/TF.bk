@@ -9,6 +9,12 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
+app.get("/", (req, res) => {
+  res.send(
+    "CryptoBot Pro - Automated Cryptocurrency Trading app is running..."
+  );
+});
+
 const corsOptions = {
   origin: process.env.ALLOWED_ORIGINS?.split(",") || ["http://localhost:3000"],
   methods: ["GET", "POST", "PUT", "DELETE"],
