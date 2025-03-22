@@ -20,7 +20,7 @@ const TransactionSchema = new mongoose.Schema(
     },
     paymentMethod: {
       type: String,
-      enum: ["crypto", "bank_transfer", "card"],
+      enum: ["crypto", "bank_transfer", "card", "wallet"],
       required: true,
     },
     referenceId: { type: String, unique: true, required: true },

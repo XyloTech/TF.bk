@@ -4,7 +4,7 @@ const Bot = require("../models/Bot");
 // 🔹 Purchase Bot
 exports.purchaseBot = async (req, res) => {
   try {
-    const { botId } = req.body;
+    const { botId, apiKey, apiSecretKey, telegramId } = req.body;
     const bot = await Bot.findById(botId);
 
     if (!bot) return res.status(404).json({ message: "Bot not found" });
@@ -15,9 +15,9 @@ exports.purchaseBot = async (req, res) => {
     const botInstance = new BotInstance({
       botId,
       userId: req.userDB._id,
-      apiKey: req.userDB.apiKey,
-      apiSecretKey: req.userDB.apiSecretKey,
-      telegramId: req.userDB.telegramId,
+      apiKey,
+      apiSecretKey,
+      telegramId,
       purchaseDate: new Date(),
       expiryDate,
     });

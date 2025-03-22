@@ -16,3 +16,21 @@
 {"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T19:37:43.025Z"}
 {"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T19:38:23.352Z"}
 {"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T19:41:23.612Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T21:35:05.160Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T21:35:17.468Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T22:27:46.296Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T22:32:32.996Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T22:32:39.574Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:15:31.970Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:15:43.935Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:28:40.034Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:29:00.369Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:42:24.566Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:42:33.317Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:42:36.371Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:45:26.941Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-22T07:44:19.120Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-22T20:32:43.495Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-22T20:34:04.452Z"}
+{"level":"error","message":"Authentication error: Decoding Firebase ID token failed. Make sure you passed the entire string JWT which represents an ID token. See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-22T20:37:48.468Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-22T21:55:15.038Z"}

@@ -1,1 +1,2 @@
 {"level":"error","message":"Authentication error: E11000 duplicate key error collection: yourdbname.users index: email_1 dup key: { email: \"maheshchitkoti@gmail.com\" }","timestamp":"2025-03-21T17:25:41.033Z"}
+{"level":"error","message":"Authentication error: Decoding Firebase ID token failed. Make sure you passed the entire string JWT which represents an ID token. See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-22T20:37:48.468Z"}

@@ -1,3 +1,5 @@
+const User = require("../models/User");
+
 // 🔹 Get User Profile
 exports.getProfile = async (req, res) => {
   res.json(req.userDB);
