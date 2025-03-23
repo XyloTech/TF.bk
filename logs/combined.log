@@ -34,3 +34,31 @@
 {"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-22T20:34:04.452Z"}
 {"level":"error","message":"Authentication error: Decoding Firebase ID token failed. Make sure you passed the entire string JWT which represents an ID token. See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-22T20:37:48.468Z"}
 {"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-22T21:55:15.038Z"}
+{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-23T20:19:02.443Z"}
+{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-23T20:19:02.579Z"}
+{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-23T20:20:41.309Z"}
+{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-23T20:20:41.423Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-23T20:42:29.156Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-23T20:42:29.359Z"}
+{"level":"error","message":"Authentication error: Decoding Firebase ID token failed. Make sure you passed the entire string JWT which represents an ID token. See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-23T21:06:47.273Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:17:35.624Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:21:48.546Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:22:04.334Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:22:13.706Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:22:22.965Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:36:01.250Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-23T21:36:11.573Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-23T21:36:14.339Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:44:25.133Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:44:52.102Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:45:11.298Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:45:26.345Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:45:34.692Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:46:43.167Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:47:06.647Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:47:44.700Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:49:47.768Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:53:57.810Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:54:18.679Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:54:49.579Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:54:53.282Z"}
