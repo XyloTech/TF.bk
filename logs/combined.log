@@ -62,3 +62,28 @@
 {"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:54:18.679Z"}
 {"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:54:49.579Z"}
 {"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:54:53.282Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-24T11:22:51.171Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-24T11:25:30.937Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-24T11:25:31.056Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-24T11:26:13.130Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-24T11:26:13.160Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T06:58:18.564Z"}
+{"level":"info","message":"New user created via Firebase: oskknydwxidvuvooyo@hthlm.com","timestamp":"2025-03-25T07:06:13.279Z"}
+{"level":"error","message":"Authentication error: E11000 duplicate key error collection: yourdbname.users index: email_1 dup key: { email: \"oskknydwxidvuvooyo@hthlm.com\" }","timestamp":"2025-03-25T07:06:13.324Z"}
+{"level":"error","message":"Authentication error: E11000 duplicate key error collection: yourdbname.users index: email_1 dup key: { email: \"oskknydwxidvuvooyo@hthlm.com\" }","timestamp":"2025-03-25T07:06:13.330Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T10:51:11.246Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T14:46:52.909Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T19:10:05.497Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T19:59:36.333Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-25T20:33:34.374Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-25T20:33:34.396Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-25T20:57:52.808Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-25T20:57:52.818Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T21:12:53.817Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T21:16:11.898Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-25T21:16:44.642Z"}
+{"level":"warn","message":"No token provided","timestamp":"2025-03-25T21:16:44.650Z"}
+{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-25T21:50:12.856Z"}
+{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-25T21:50:17.274Z"}
+{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-25T21:50:19.359Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-27T15:53:19.198Z"}

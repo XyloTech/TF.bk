@@ -8,13 +8,23 @@ exports.getProfile = async (req, res) => {
 // 🔹 Update API Keys
 exports.updateApiKeys = async (req, res) => {
   try {
-    const { apiKey, apiSecretKey } = req.body;
-    await User.findByIdAndUpdate(
-      req.userDB._id,
-      { apiKey, apiSecretKey },
-      { new: true }
-    );
-    res.json({ message: "API keys updated successfully" });
+    const { apiKey, apiSecretKey, fullName, telegramId } = req.body;
+
+    const updates = {};
+
+    if (apiKey) updates.apiKey = apiKey;
+    if (apiSecretKey) updates.apiSecretKey = apiSecretKey;
+    if (fullName) updates.fullName = fullName;
+    if (telegramId) updates.telegramId = telegramId;
+
+    const updatedUser = await User.findByIdAndUpdate(req.userDB._id, updates, {
+      new: true,
+    });
+
+    res.json({
+      message: "Profile updated successfully",
+      user: updatedUser, // ✅ toJSON already strips sensitive fields
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
