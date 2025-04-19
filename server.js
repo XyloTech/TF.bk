@@ -32,6 +32,7 @@ app.use("/api/referrals", require("./routes/referralRoutes"));
 app.use("/api/trades", require("./routes/tradeRoutes"));
 app.use("/api/transactions", require("./routes/transactionRoutes"));
 app.use("/api/payments", require("./routes/paymentRoutes"));
+app.use("/api/logs", require("./routes/logRoutes"));
 
 // 🧼 Global Error Handler
 app.use(errorHandler);

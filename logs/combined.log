@@ -1,89 +1,32 @@
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T10:31:51.433Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T12:09:18.630Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T15:09:50.799Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T15:10:05.554Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T15:10:20.717Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T15:33:41.686Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T17:10:59.189Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T17:11:16.997Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T17:11:51.574Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T17:12:04.424Z"}
-{"level":"info","message":"New user created with UID: WQswcrPe5NP8SWMMyBmmh2oPKNm2","timestamp":"2025-03-21T17:25:41.002Z"}
-{"level":"error","message":"Authentication error: E11000 duplicate key error collection: yourdbname.users index: email_1 dup key: { email: \"maheshchitkoti@gmail.com\" }","timestamp":"2025-03-21T17:25:41.033Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T19:28:42.299Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T19:34:53.736Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T19:35:20.371Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T19:37:43.025Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T19:38:23.352Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T19:41:23.612Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T21:35:05.160Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T21:35:17.468Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T22:27:46.296Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T22:32:32.996Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T22:32:39.574Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:15:31.970Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:15:43.935Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:28:40.034Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:29:00.369Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:42:24.566Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:42:33.317Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:42:36.371Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-21T23:45:26.941Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-22T07:44:19.120Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-22T20:32:43.495Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-22T20:34:04.452Z"}
-{"level":"error","message":"Authentication error: Decoding Firebase ID token failed. Make sure you passed the entire string JWT which represents an ID token. See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-22T20:37:48.468Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-22T21:55:15.038Z"}
-{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-23T20:19:02.443Z"}
-{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-23T20:19:02.579Z"}
-{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-23T20:20:41.309Z"}
-{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-23T20:20:41.423Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-23T20:42:29.156Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-23T20:42:29.359Z"}
-{"level":"error","message":"Authentication error: Decoding Firebase ID token failed. Make sure you passed the entire string JWT which represents an ID token. See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-23T21:06:47.273Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:17:35.624Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:21:48.546Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:22:04.334Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:22:13.706Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:22:22.965Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:36:01.250Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-23T21:36:11.573Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-23T21:36:14.339Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:44:25.133Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:44:52.102Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:45:11.298Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:45:26.345Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:45:34.692Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:46:43.167Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:47:06.647Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:47:44.700Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:49:47.768Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:53:57.810Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:54:18.679Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:54:49.579Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-23T21:54:53.282Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-24T11:22:51.171Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-24T11:25:30.937Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-24T11:25:31.056Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-24T11:26:13.130Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-24T11:26:13.160Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T06:58:18.564Z"}
-{"level":"info","message":"New user created via Firebase: oskknydwxidvuvooyo@hthlm.com","timestamp":"2025-03-25T07:06:13.279Z"}
-{"level":"error","message":"Authentication error: E11000 duplicate key error collection: yourdbname.users index: email_1 dup key: { email: \"oskknydwxidvuvooyo@hthlm.com\" }","timestamp":"2025-03-25T07:06:13.324Z"}
-{"level":"error","message":"Authentication error: E11000 duplicate key error collection: yourdbname.users index: email_1 dup key: { email: \"oskknydwxidvuvooyo@hthlm.com\" }","timestamp":"2025-03-25T07:06:13.330Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T10:51:11.246Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T14:46:52.909Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T19:10:05.497Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T19:59:36.333Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-25T20:33:34.374Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-25T20:33:34.396Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-25T20:57:52.808Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-25T20:57:52.818Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T21:12:53.817Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-25T21:16:11.898Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-25T21:16:44.642Z"}
-{"level":"warn","message":"No token provided","timestamp":"2025-03-25T21:16:44.650Z"}
-{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-25T21:50:12.856Z"}
-{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-25T21:50:17.274Z"}
-{"level":"error","message":"Authentication error: Firebase ID token has expired. Get a fresh ID token from your client app and try again (auth/id-token-expired). See https://firebase.google.com/docs/auth/admin/verify-id-tokens for details on how to retrieve an ID token.","timestamp":"2025-03-25T21:50:19.359Z"}
-{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-03-27T15:53:19.198Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-03T05:57:12.754Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-05T07:24:22.032Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-06T10:56:49.042Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-06T11:42:58.879Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-10T04:55:16.878Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-12T12:33:55.841Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-13T06:45:29.106Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-17T13:24:10.431Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-17T14:58:04.552Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-17T14:58:06.210Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-17T18:45:42.289Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T10:29:06.681Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T10:32:12.130Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T10:35:59.427Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T10:36:08.083Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T10:49:57.408Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T10:51:17.657Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T10:52:44.297Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:00:06.146Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:00:16.599Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:00:26.851Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:00:39.842Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:00:46.629Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:00:54.896Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:02:13.831Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:02:17.780Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:02:20.178Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:02:26.408Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:02:29.836Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:04:01.955Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:12:24.776Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully.","timestamp":"2025-04-18T11:36:56.310Z"}

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const bcrypt = require("bcrypt");
 
 const UserSchema = new mongoose.Schema(
   {
@@ -10,10 +11,9 @@ const UserSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
+      index: true,
     },
     role: { type: String, enum: ["user", "admin"], default: "user" },
-    apiKey: { type: String, unique: true, sparse: true },
-    apiSecretKey: { type: String, unique: true, sparse: true },
     telegramId: { type: String, default: "" },
     referralLink: { type: String, default: "" },
     accountBalance: { type: Number, default: 0.0 },
@@ -30,8 +30,6 @@ const UserSchema = new mongoose.Schema(
 // ✅ Auto-remove sensitive fields from JSON responses
 UserSchema.set("toJSON", {
   transform: function (doc, ret) {
-    delete ret.apiKey;
-    delete ret.apiSecretKey;
     delete ret.__v;
     return ret;
   },

@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require("uuid");
 const Transaction = require("../models/Transaction");
 const User = require("../models/User");
 const { sendTelegramMessage } = require("../utils/telegram");
+const BotInstance = require("../models/BotInstance");
 
 // 🔹 Create NowPayments Invoice
 exports.createCryptoPayment = async (req, res) => {
@@ -76,11 +77,24 @@ exports.nowPaymentsWebhook = async (req, res) => {
         });
 
         if (!existing) {
+          const now = new Date();
+          const expiry = new Date(now);
+          expiry.setMonth(expiry.getMonth() + 1); // 1-month subscription
+
           await BotInstance.create({
             userId: tx.userId,
             botId: tx.metadata.botId,
-            isActive: true,
-            config: {}, // You can prefill config defaults here if needed
+            apiKey: "", // To be set manually or via API
+            apiSecretKey: "",
+            telegramId: "", // Fetch if available, else left blank
+            active: true,
+            accountType: "paid",
+            purchaseDate: now,
+            expiryDate: expiry,
+            strategy: "DEFAULT_STRATEGY",
+            exchange: "BINANCE", // Or dynamically set based on user preference
+            running: false,
+            config: {},
           });
         }
 
