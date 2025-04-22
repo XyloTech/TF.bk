@@ -1,19 +1,26 @@
+// routes/paymentRoutes.js
 const express = require("express");
-const router = express.Router();
 const {
   createCryptoPayment,
   nowPaymentsWebhook,
   getPaymentStatus,
-} = require("../controllers/paymentController");
-const authMiddleware = require("../middleware/authMiddleware");
+} = require("../controllers/paymentController"); // Adjust path
+const authenticateUser = require("../middleware/authMiddleware"); // Adjust path
 
-// 🔐 Create payment (user must be logged in)
-router.post("/create-payment", authMiddleware, createCryptoPayment);
+const router = express.Router();
 
-// 🌐 Webhook (open route)
-router.post("/webhook", nowPaymentsWebhook);
+// POST /api/payments/create - User initiates payment (Needs JSON body)
+router.post("/create", authenticateUser, express.json(), createCryptoPayment); // Ensure JSON parsing if not global
 
-// 🔎 Check payment status (optional for frontend)
-router.get("/status", getPaymentStatus);
+// POST /api/payments/webhook - NowPayments sends status updates (Needs RAW body for signature check)
+// Apply express.raw() BEFORE the controller handles it.
+router.post(
+  "/webhook",
+  express.raw({ type: "application/json" }), // Capture raw body as buffer
+  nowPaymentsWebhook
+);
+
+// GET /api/payments/status?ref=... - User checks status
+router.get("/status", authenticateUser, getPaymentStatus);
 
 module.exports = router;

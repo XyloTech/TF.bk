@@ -1,22 +1,30 @@
+// routes/botInstanceRoutes.js
 const express = require("express");
 const {
   purchaseBot,
   getUserBots,
-  // ⬇️ Import the new controller function
   updateBotInstanceKeys,
-} = require("../controllers/botInstanceController");
-const authenticateUser = require("../middleware/authMiddleware");
+  // Import start/stop controllers
+  startBotInstance,
+  stopBotInstance,
+} = require("../controllers/botInstanceController"); // Adjust path
+const authenticateUser = require("../middleware/authMiddleware"); // Adjust path
 
 const router = express.Router();
 
-// POST /api/bot-instances/purchase (Route to create a new instance)
+// POST /api/bot-instances/purchase
 router.post("/purchase", authenticateUser, purchaseBot);
 
-// GET /api/bot-instances/my-bots (Route to get instances for logged-in user)
+// GET /api/bot-instances/my-bots
 router.get("/my-bots", authenticateUser, getUserBots);
 
-// --- 👇 ADD THIS ROUTE ---
-// PUT /api/bot-instances/:botInstanceId/keys (Route to update keys for a specific instance)
+// PUT /api/bot-instances/:botInstanceId/keys
 router.put("/:botInstanceId/keys", authenticateUser, updateBotInstanceKeys);
+
+// POST /api/bot-instances/:botInstanceId/start
+router.post("/:botInstanceId/start", authenticateUser, startBotInstance);
+
+// POST /api/bot-instances/:botInstanceId/stop
+router.post("/:botInstanceId/stop", authenticateUser, stopBotInstance);
 
 module.exports = router;

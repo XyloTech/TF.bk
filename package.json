@@ -10,8 +10,12 @@
     "express-slow-down": "^2.0.3",
     "firebase-admin": "^13.2.0",
     "helmet": "^8.1.0",
+    "lodash.merge": "^4.6.2",
     "mongoose": "^8.12.1",
     "node-cache": "^5.1.2",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.10.1",
+    "pm2": "^6.0.5",
     "socket.io": "^4.8.1",
     "winston": "^3.17.0"
   },
