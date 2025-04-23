@@ -2,20 +2,18 @@
 # exit on error
 set -o errexit
 
+echo "--- Installing System Dependencies (TA-Lib) ---"
+# Required for TA-Lib compilation
+apt-get update && apt-get install -y --no-install-recommends build-essential ta-lib-dev
+
 echo "--- Installing Node.js dependencies ---"
-npm install
+# Consider using --production if you don't need devDependencies on Render
+npm install --production
 
-echo "--- Installing Python dependencies (Freqtrade) ---"
-pip3 install --upgrade pip
-pip3 install freqtrade # Use the version/extras you need
+echo "--- Installing Python dependencies ---"
+pip install --upgrade pip
+pip install -r requirements.txt # Install from your requirements file
 
-# --- Copy strategies from committed repo folder to persistent disk ---
-# Render mounts the persistent disk before the build command runs.
-# Replace '/data/ft_user_data' with YOUR persistent disk Mount Path.
-echo "Copying strategy files from ./user_data/strategies to persistent disk..."
-# Ensure the target directory exists on the disk
-mkdir -p /data/ft_user_data/strategies
-# Copy everything from the committed user_data/strategies folder
-cp -r ./user_data/strategies/* /data/ft_user_data/strategies/
+# No need to copy strategies or config template here - freqtradeManager handles it
 
 echo "--- Build finished ---"

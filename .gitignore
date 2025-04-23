@@ -1,1 +1,35 @@
+# Node.js
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+.env
+.env.*
+!/.env.example
+
+# Freqtrade - IGNORE the runtime user data directory completely
+freqtrade-user-data/
+
+# Python / Freqtrade specific build/cache items
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite*
+*.log* # Ignore root logs if any
+*.whl  # Ignore downloaded wheels
+
+# Temporary test data (if you used it)
+ft_manual_test_userdata/
+tradesv3.dryrun.sqlite*
+
+# OS / Editor specific
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# PM2 Logs (if generated locally)
+pm2_*.log

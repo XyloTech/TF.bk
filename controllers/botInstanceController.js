@@ -203,68 +203,56 @@ exports.startBotInstance = async (req, res) => {
   }
 
   const botInstanceId = req.params.botInstanceId;
-  const loggedInUserId = req.userDB._id; // This is an ObjectId
+  const loggedInUserId = req.userDB._id; // This should be an ObjectId
 
   try {
-    // --- Step 1: Find by ID only ---
+    // --- Step 1: Find instance by ID and verify ownership in one query ---
     logger.info(
-      `CONTROLLER: Attempting to find BotInstance by ID: ${botInstanceId}`
+      `CONTROLLER: Attempting findOne for BotInstance. ID: ${botInstanceId}, UserID: ${loggedInUserId}`
     );
-    const instance = await BotInstance.findById(botInstanceId);
+    const instance = await BotInstance.findOne({
+      _id: botInstanceId, // Mongoose handles casting string ID to ObjectId
+      userId: loggedInUserId, // Compare ObjectId from user with ObjectId in DB
+    });
 
-    // --- Step 2: Handle Not Found ---
+    // --- Step 2: Handle Not Found or Permission Denied ---
     if (!instance) {
+      // This now covers both cases: instance doesn't exist OR it exists but doesn't belong to this user
       logger.warn(
-        `CONTROLLER: Bot instance not found for ID: ${botInstanceId}`
-      );
-      return res.status(404).json({ message: "Bot instance not found." });
-    }
-    logger.info(
-      `CONTROLLER: Found instance by ID. Instance UserID: ${
-        instance.userId
-      } (Type: ${typeof instance.userId}), Active: ${instance.active}`
-    );
-
-    // --- Step 3: Verify Ownership ---
-    // Use String comparison as it reliably worked in logs
-    if (String(instance.userId) !== String(loggedInUserId)) {
-      logger.warn(
-        `CONTROLLER: Permission denied. Instance Owner: ${instance.userId}, Requester: ${loggedInUserId}`
+        `CONTROLLER: Bot instance not found for ID: ${botInstanceId} and UserID: ${loggedInUserId}, or permission denied.`
       );
       return res
-        .status(403)
-        .json({ message: "Permission denied for this bot instance." });
+        .status(404)
+        .json({ message: "Bot instance not found or permission denied." });
     }
-    logger.info(`CONTROLLER: Ownership verified for instance ${instance._id}.`);
+    logger.info(
+      `CONTROLLER: Found instance owned by user. Instance ID: ${instance._id}, Active: ${instance.active}`
+    );
 
-    // --- Step 4: Check if Active --- <<<< ADDED BACK
+    // --- Step 3: Check if Active ---
     if (!instance.active) {
       logger.warn(
         `CONTROLLER: Attempt to start inactive instance ${instance._id}`
       );
-      // Use 403 Forbidden status code
       return res
         .status(403)
         .json({ message: "Cannot start bot: Instance is inactive." });
     }
     logger.info(`CONTROLLER: Instance ${instance._id} is active.`);
 
-    // --- Step 5: Check Expiry Date --- <<<< ADDED BACK
+    // --- Step 4: Check Expiry Date ---
     const now = new Date();
     if (instance.expiryDate < now) {
       logger.warn(
         `CONTROLLER: Attempt to start expired instance ${instance._id}. Expiry: ${instance.expiryDate}`
       );
-      // Use 403 Forbidden status code
-      return res
-        .status(403)
-        .json({
-          message: `Cannot start bot: Subscription/Demo expired on ${instance.expiryDate.toISOString()}`,
-        });
+      return res.status(403).json({
+        message: `Cannot start bot: Subscription/Demo expired on ${instance.expiryDate.toISOString()}`,
+      });
     }
     logger.info(`CONTROLLER: Instance ${instance._id} is not expired.`);
 
-    // --- Step 6: Proceed with starting the process ---
+    // --- Step 5: Proceed with starting the process ---
     logger.info(
       `CONTROLLER: All checks passed for instance ${instance._id}. Calling startFreqtradeProcess.`
     );
@@ -275,12 +263,15 @@ exports.startBotInstance = async (req, res) => {
       result
     );
     // Send the successful response from the manager
-    res.json({ message: result.message, instance: result.instance });
+    // Ensure result.instance exists before sending
+    res.json({
+      message: result.message,
+      instance: result.instance || instance,
+    });
   } catch (error) {
-    // Catch errors from findById OR startFreqtradeProcess
+    // Catch errors from findOne OR startFreqtradeProcess
     const userIdForLog = req.userDB ? req.userDB._id : "UNKNOWN_USER";
     const botInstanceIdForLog = req.params.botInstanceId || "UNKNOWN_INSTANCE";
-    // Log the full error for detailed debugging
     logger.error(
       `CONTROLLER: API Error processing start for instance ${botInstanceIdForLog} user ${userIdForLog}:`,
       error
@@ -311,29 +302,59 @@ exports.startBotInstance = async (req, res) => {
 
 // 🔹 Stop Bot Instance
 exports.stopBotInstance = async (req, res) => {
-  try {
-    const { botInstanceId } = req.params;
-    const userId = req.userDB._id;
+  if (!req.userDB || !req.userDB._id) {
+    logger.error("CONTROLLER: req.userDB._id is missing in stopBotInstance!");
+    return res.status(401).json({ message: "Authentication data missing." });
+  }
 
+  const botInstanceId = req.params.botInstanceId;
+  const loggedInUserId = req.userDB._id; // This should be an ObjectId
+
+  try {
+    // --- Step 1: Find instance by ID and verify ownership in one query ---
+    logger.info(
+      `CONTROLLER (STOP): Attempting findOne for BotInstance. ID: ${botInstanceId}, UserID: ${loggedInUserId}`
+    );
     const instance = await BotInstance.findOne({
       _id: botInstanceId,
-      userId: userId,
+      userId: loggedInUserId,
     });
+
+    // --- Step 2: Handle Not Found or Permission Denied ---
     if (!instance) {
+      logger.warn(
+        `CONTROLLER (STOP): Bot instance not found for ID: ${botInstanceId} and UserID: ${loggedInUserId}, or permission denied.`
+      );
       return res
         .status(404)
         .json({ message: "Bot instance not found or permission denied." });
     }
+    logger.info(
+      `CONTROLLER (STOP): Found instance owned by user. Instance ID: ${instance._id}.`
+    );
 
+    // --- Step 3: Proceed with stopping the process ---
+    logger.info(
+      `CONTROLLER (STOP): Calling stopFreqtradeProcess for instance ${instance._id}.`
+    );
     // Delegate (markInactive = false for user stop)
     const result = await stopFreqtradeProcess(botInstanceId, false);
 
-    // Fetch the final state after stop
+    // Fetch the final state after stop for accurate response
     const updatedInstance = await BotInstance.findById(botInstanceId);
-    res.json({ message: result.message, instance: updatedInstance });
+    logger.info(
+      `CONTROLLER (STOP): Stop process result for instance ${instance._id}:`,
+      result
+    );
+    res.json({
+      message: result.message,
+      instance: updatedInstance || instance,
+    }); // Return updated if possible
   } catch (error) {
-    console.error(
-      `API Error stopping instance ${req.params.botInstanceId} for user ${req.userDB._id}:`,
+    const userIdForLog = req.userDB ? req.userDB._id : "UNKNOWN_USER";
+    const botInstanceIdForLog = req.params.botInstanceId || "UNKNOWN_INSTANCE";
+    logger.error(
+      `CONTROLLER (STOP): API Error stopping instance ${botInstanceIdForLog} for user ${userIdForLog}:`,
       error
     );
     res.status(500).json({

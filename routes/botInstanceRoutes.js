@@ -7,8 +7,8 @@ const {
   // Import start/stop controllers
   startBotInstance,
   stopBotInstance,
-} = require("../controllers/botInstanceController"); // Adjust path
-const authenticateUser = require("../middleware/authMiddleware"); // Adjust path
+} = require("../controllers/botInstanceController");
+const authenticateUser = require("../middleware/authMiddleware");
 
 const router = express.Router();
 

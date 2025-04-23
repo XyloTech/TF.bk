@@ -52,8 +52,8 @@ class SampleEmaRsiStrategy(IStrategy):
 
     # --- Indicator Configuration ---
     # Define periods for indicators
-    ema_short_period = 10
-    ema_long_period = 25
+    ema_short_period = 5
+    ema_long_period = 10
     rsi_period = 14
     rsi_buy_threshold = 65 # Avoid buying if RSI is above this value
 
@@ -104,39 +104,30 @@ class SampleEmaRsiStrategy(IStrategy):
         Returns:
             DataFrame: DataFrame with buy column
         """
+        print(f"Checking buy conditions for {metadata['pair']}")  # Add this line
+        print(f"Latest EMA Short: {dataframe['ema_short'].iloc[-1]}")
+        print(f"Latest EMA Long: {dataframe['ema_long'].iloc[-1]}")
+        print(f"Latest RSI: {dataframe['rsi'].iloc[-1]}")
         conditions = []
 
         # --- Buy Condition 1: EMA Crossover ---
         conditions.append(
-            qtpylib.crossed_above(
-                dataframe[f'ema_short'],
-                dataframe[f'ema_long']
-            )
+            qtpylib.crossed_above(dataframe[f'ema_short'], dataframe[f'ema_long'])
         )
-
-        # --- Buy Condition 2: RSI Filter ---
-        # Only buy if RSI is below the overbought threshold
-        conditions.append(dataframe['rsi'] < self.rsi_buy_threshold)
-
-        # --- Optional: Trend Confirmation (using informative example) ---
-        # if self.informative_timeframe:
-        #     conditions.append(dataframe['close'] > dataframe[f'inf_ema_50_{self.informative_timeframe}']) # Price above 4h EMA 50
+        # --- TEMPORARILY COMMENT OUT RSI FILTER ---
+        # conditions.append(dataframe['rsi'] < self.rsi_buy_threshold)
 
         # --- Final Buy Signal ---
-        # Build the final signal based on conditions
+        # Initialize 'buy' column with 0
+        dataframe['buy'] = 0
         if conditions:
-            dataframe.loc[
-                # Combine all conditions using logical AND (&)
-                (
-                    # Reduce applies the & operator iteratively to the list of conditions
-                    # This requires importing functools: from functools import reduce
-                    # Alternatively, chain them manually if you have few conditions:
-                    conditions[0] & conditions[1] # & conditions[2] ...
-                ),
-                'buy'] = 1
-        else:
-            # Default to no buy signal if no conditions are defined
-            dataframe['buy'] = 0
+            # Build the final condition using logical AND (&)
+            # Since you only have one condition active, this is simple.
+            # If you had multiple uncommented conditions, it would be:
+            # final_condition = conditions[0] & conditions[1] & ...
+            final_condition = conditions[0] # Assuming only EMA cross is active
+
+            dataframe.loc[final_condition, 'buy'] = 1
 
         return dataframe
 
@@ -166,16 +157,18 @@ class SampleEmaRsiStrategy(IStrategy):
         # conditions.append(qtpylib.crossed_above(dataframe['rsi'], 75))
 
         # --- Final Sell Signal ---
+        # Initialize 'sell' column with 0
+        dataframe['sell'] = 0
         if conditions:
-            dataframe.loc[
-                (
-                    conditions[0] # Only using EMA crossunder for this example
-                    # Use | for logical OR if combining multiple sell triggers
-                    # e.g., conditions[0] | conditions[1]
-                ),
-                'sell'] = 1
-        else:
-            # Default to no sell signal if no conditions are defined
-            dataframe['sell'] = 0
+            # Build the final condition using logical AND (&) or OR (|)
+            # depending on how you want multiple sell conditions to interact.
+            # Here, we only use the first condition (EMA crossunder).
+            # If you had multiple conditions, it might be:
+            # final_condition = conditions[0] | conditions[1] # Sell if EITHER condition is met
+            final_condition = conditions[0] # Using only EMA crossunder
+
+            dataframe.loc[final_condition, 'sell'] = 1
 
         return dataframe
+
+# <--- The invalid line that was here has been removed --->

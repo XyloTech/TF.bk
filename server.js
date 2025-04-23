@@ -18,7 +18,11 @@ const { connectPm2, disconnectPm2 } = require("./services/freqtradeManager");
 const { initScheduler, stopScheduler } = require("./scheduler");
 
 const app = express();
+// Trust the first proxy hop (common for platforms like Render, Heroku)
+app.set("trust proxy", 1);
+
 const server = http.createServer(app);
+
 mongoose.set("debug", true);
 // --- Core Middleware ---
 app.use(express.json({ limit: "1mb" }));
@@ -63,6 +67,7 @@ app.use("/api/trades", require("./routes/tradeRoutes"));
 app.use("/api/transactions", require("./routes/transactionRoutes"));
 app.use("/api/payments", require("./routes/paymentRoutes"));
 app.use("/api/logs", require("./routes/logRoutes"));
+app.use("/api/webhooks", require("./routes/webhookRoutes")); // <<< ADD THIS LINE
 
 // --- Global Error Handler (Must be last) ---
 app.use(errorHandler);
