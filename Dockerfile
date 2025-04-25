@@ -1,13 +1,10 @@
-# Stage 1: Build TA-Lib C Library (Keep as is)
-FROM python:3.10-slim-bookworm as talib_builder
-# ... (rest of stage 1) ...
-
-# Stage 2: Final application image
+# Stage 2: Build the final application image
 FROM python:3.10-slim-bookworm
+
 ARG INSTALL_PREFIX=/usr/local
 WORKDIR /opt/render/project/src
 
-# --- Install Node.js AND Build Tools needed for pip install AND wget --- MODIFIED HERE ---
+# --- Install Node.js AND Build Tools needed for pip install AND wget --- THIS BLOCK ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -22,7 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
     && apt-get update && apt-get install nodejs -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
-# --- END MODIFICATION ---
+# --- ENSURE 'wget' IS INCLUDED ABOVE ---
+
+# ... (rest of the Dockerfile remains the same as the last version) ...
 
 # Copy TA-Lib artifacts
 COPY --from=talib_builder ${INSTALL_PREFIX}/lib/libta* ${INSTALL_PREFIX}/lib/
