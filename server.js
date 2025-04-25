@@ -11,7 +11,6 @@ const requestLogger = require("./middleware/requestLogger");
 const errorHandler = require("./middleware/errorHandler");
 const { generalRateLimiter } = require("./middleware/rateLimiter");
 const securityHeaders = require("./middleware/securityHeaders");
-const requestLogger = require("./middleware/requestLogger");
 
 // --- Services & Utils ---
 const { setupSocket } = require("./socket");
