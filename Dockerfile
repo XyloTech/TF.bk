@@ -19,14 +19,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Stage 2: TA-Lib builder
 FROM system-base as talib-builder
 
-# Compile TA-Lib with relaxed compiler flags
+# Compile TA-Lib with sequential build to avoid race conditions
 WORKDIR /tmp
 RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib/ \
     && sed -i.bak 's/-O3/-O2/g' configure.in configure \
     && ./configure --prefix=/usr/local \
-    && make -j$(nproc) CFLAGS="-Wno-error=incompatible-pointer-types -DTA_=TA_" \
+    && make -j1 CFLAGS="-Wno-error=incompatible-pointer-types -DTA_=TA_" \
     && make install \
     && rm -rf /tmp/ta-lib*
 
@@ -94,10 +94,6 @@ RUN npm install --production
 
 # Copy application code
 COPY . .
-
-# Health check and verification
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD python -c "import talib, freqtrade; print('Dependencies OK')" || exit 1
 
 # Verify installations
 RUN python -c "import talib; print(f'TA-Lib {talib.__version__} OK')" \
