@@ -29,7 +29,20 @@ RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && make install \
     && rm -rf /tmp/ta-lib*
 
-# Stage 3: Python environment builder
+# Stage 3: Node.js builder
+FROM system-base as node-builder
+
+# Install Node.js 20.x (correct path for Debian-based images)
+RUN mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Verify Node.js installation path
+RUN ls -la /usr/bin/node && ls -la /usr/lib/node_modules
+
+# Stage 4: Python environment builder
 FROM system-base as python-builder
 
 # Copy compiled TA-Lib
@@ -46,16 +59,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip wheel setuptools \
     && CFLAGS="-Wno-error=incompatible-pointer-types" \
     pip install --no-cache-dir -r requirements.txt
-
-# Stage 4: Node.js builder
-FROM system-base as node-builder
-
-# Install Node.js 20.x
-RUN mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
-    && apt-get update && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
 
 # Stage 5: Final production image
 FROM python:3.10-slim-bookworm
@@ -75,9 +78,9 @@ RUN ldconfig
 # Copy Python environment
 COPY --from=python-builder /opt/venv /opt/venv
 
-# Copy Node.js
-COPY --from=node-builder /usr/local/bin/node /usr/local/bin/node
-COPY --from=node-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+# Copy Node.js from builder (using correct paths for Debian)
+COPY --from=node-builder /usr/bin/node /usr/local/bin/node
+COPY --from=node-builder /usr/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
 
 # Environment variables
