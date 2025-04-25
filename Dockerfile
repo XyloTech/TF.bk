@@ -30,14 +30,15 @@ FROM python:3.10-slim-bookworm
 ARG INSTALL_PREFIX=/usr/local
 WORKDIR /opt/render/project/src
 
-# Install Node.js AND Build Tools needed for pip install in the final stage
-# Running as root inside Docker build context
+# --- Install Node.js AND Build Tools needed for pip install ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     gnupg \
     build-essential \
     make \
+    # Add Cython needed by TA-Lib setup.py build_ext
+    cython \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
     && NODE_MAJOR=20 \
@@ -65,12 +66,36 @@ COPY requirements.txt ./
 # Install Node.js dependencies
 RUN npm install --production
 
-# Install Python dependencies
-# Ensure NumPy < 1.24 and TA-Lib == 0.4.24 are in requirements.txt
-RUN pip install --no-cache-dir --upgrade pip wheel setuptools && \
-    # Explicitly set CFLAGS here to ignore the specific warning causing the error
-    export CFLAGS="-Wno-error=incompatible-pointer-types" && \
-    pip install --no-cache-dir -r requirements.txt --verbose
+# --- Install Python Dependencies ---
+# Upgrade pip first
+RUN pip install --no-cache-dir --upgrade pip wheel setuptools
+
+# Install NumPy required by TA-Lib
+RUN pip install --no-cache-dir "numpy<1.24" --verbose
+
+# --- Build and Install TA-Lib Python wrapper manually --- START OF CHANGE ---
+# Download specific TA-Lib Python wrapper source
+ARG TALIB_PY_VERSION=0.4.24
+ARG TALIB_PY_URL=https://github.com/mrjbq7/ta-lib/archive/refs/tags/TA_Lib-${TALIB_PY_VERSION}.tar.gz
+WORKDIR /tmp/talib-python-build # Use a temporary directory
+RUN wget -q -O talib-python.tar.gz ${TALIB_PY_URL} && \
+    tar -xzf talib-python.tar.gz --strip-components=1
+
+# Set CFLAGS to ignore the warning AS an error, then run build_ext and install
+RUN export CFLAGS="-Wno-error=incompatible-pointer-types" && \
+    python setup.py build_ext --verbose && \
+    pip install . --no-build-isolation --verbose # Install the locally built package
+
+WORKDIR /opt/render/project/src # Go back to the main work directory
+RUN rm -rf /tmp/talib-python-build # Clean up source
+
+# --- END OF CHANGE ---
+
+
+# Install the rest of the requirements
+# IMPORTANT: Ensure TA-Lib is REMOVED from requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt --verbose
+
 
 # Copy the rest of your application code
 COPY . .
