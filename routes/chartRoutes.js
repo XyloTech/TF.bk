@@ -1,7 +1,7 @@
 // routes/chartRoutes.js
 const express = require("express");
 const chartController = require("../controllers/chartController");
-const authenticateUser = require("../middleware/authenticateUser"); // Assuming you have this
+const authenticateUser = require("../middleware/authMiddleware"); // Assuming you have this
 
 const router = express.Router();
 
