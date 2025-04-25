@@ -11,6 +11,9 @@ yarn-error.log*
 # Freqtrade - IGNORE the runtime user data directory completely
 freqtrade-user-data/
 
+#
+log/
+
 # Python / Freqtrade specific build/cache items
 venv/
 __pycache__/
