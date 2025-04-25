@@ -43,7 +43,7 @@ echo "--- Installing TA-Lib C library to ${INSTALL_PREFIX} ---"
 make install || { echo 'make install failed'; exit 1; }
 
 echo "--- Verifying LOCAL C Library Installation ---"
-if [ -f "${INSTALL_PREFIX}/include/ta-lib/ta_defs.h" ] && [ -f "${INSTALL_PREFIX}/lib/libta_lib.a" ] && [ -f "${INSTALL_PREFIX}/lib/libta_lib.la" ]; then
+if [ -f "${INSTALL_PREFIX}/include/ta-lib/ta_defs.h" ] && [ -f "${INSTALL_PREFIX}/lib/libta_lib.a" ]; then
     echo "SUCCESS: TA-Lib C library files found in expected locations"
     # List the installed files for verification
     find ${INSTALL_PREFIX} -type f | grep -E 'lib/libta|include/ta-lib' | sort
@@ -63,43 +63,75 @@ export LIBRARY_PATH="${INSTALL_PREFIX}/lib:${LIBRARY_PATH:-}"
 export LD_LIBRARY_PATH="${INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 export PKG_CONFIG_PATH="${INSTALL_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 
-# Create symlinks for the library so the linker can find it more easily
-mkdir -p /usr/local/lib
-ln -sf ${INSTALL_PREFIX}/lib/libta_lib.a /usr/local/lib/
-ln -sf ${INSTALL_PREFIX}/lib/libta_lib.la /usr/local/lib/
-if [ -f "${INSTALL_PREFIX}/lib/libta_lib.so" ]; then
-    ln -sf ${INSTALL_PREFIX}/lib/libta_lib.so /usr/local/lib/
-fi
-
 # --- Go back to the project source directory ---
 echo "--- Changing directory back to ${PROJECT_SRC_DIR} ---"
 cd "${PROJECT_SRC_DIR}"
+
+# --- Create local setup.cfg to point the compiler to the correct paths ---
+echo "--- Creating setup.cfg file for TA-Lib Python wrapper ---"
+cat > "${PROJECT_SRC_DIR}/setup.cfg" << EOF
+[build_ext]
+include_dirs = ${INSTALL_PREFIX}/include
+library_dirs = ${INSTALL_PREFIX}/lib
+EOF
+
+# Download specific version of TA-Lib Python wrapper source
+echo "--- Downloading TA-Lib Python Wrapper Source ---"
+TALIB_PY_VERSION="0.4.28"
+TALIB_PY_URL="https://github.com/mrjbq7/ta-lib/archive/refs/tags/TA_Lib-${TALIB_PY_VERSION}.tar.gz"
+TALIB_PY_DIR="${PROJECT_SRC_DIR}/ta-lib-python"
+
+mkdir -p "${TALIB_PY_DIR}"
+wget -q -O talib-python.tar.gz "${TALIB_PY_URL}"
+tar -xzf talib-python.tar.gz -C "${TALIB_PY_DIR}" --strip-components=1
+rm talib-python.tar.gz
 
 # --- Install Python dependencies ---
 echo "--- Installing Python requirements ---"
 pip install --upgrade pip wheel setuptools cython
 
-# Install numpy first before TA-Lib
+# Install numpy compatible with FreqTrade and TA-Lib
 echo "--- Installing NumPy (required by TA-Lib wrapper) ---"
 pip install numpy==1.24.3 --verbose
 
-# Create the TA_LIBRARY_PATH environment variable file for setup.py
-echo "--- Creating setup.cfg for TA-Lib Python wrapper ---"
-cat > setup.cfg << EOF
-[build_ext]
-include_dirs = ${INSTALL_PREFIX}/include
-library_dirs = ${INSTALL_PREFIX}/lib:/usr/local/lib:/usr/lib
+# Install from local source
+echo "--- Building and Installing TA-Lib Python wrapper from source ---"
+cd "${TALIB_PY_DIR}"
+
+# Modify setup.py to use our specific paths
+echo "--- Patching setup.py with correct paths ---"
+cat > setup.py.patch << EOF
+--- setup.py.orig
++++ setup.py
+@@ -77,8 +77,8 @@
+     package_dir={'talib': 'talib'},
+     packages=['talib'],
+     ext_modules=[
+-        Extension('talib._ta_lib',
+-            include_dirs=include_dirs,
+-            library_dirs=lib_talib_dirs,
++        Extension('talib._ta_lib', 
++            include_dirs=['${INSTALL_PREFIX}/include'],
++            library_dirs=['${INSTALL_PREFIX}/lib'],
+             libraries=['ta_lib'],
+             sources=['talib/_ta_lib.pyx'])
+     ],
 EOF
 
-# Install TA-Lib Python wrapper directly from source
-echo "--- Installing TA-Lib Python wrapper from source ---"
-pip install --no-cache-dir --verbose git+https://github.com/mrjbq7/ta-lib.git@master
+patch -p0 < setup.py.patch || echo "Patch may have failed but we'll continue anyway"
 
-# Verify TA-Lib installation
-echo "--- Verifying TA-Lib Python Installation ---"
-python -c "import talib; print('TA-Lib Python wrapper installed successfully!')" || echo "TA-Lib Python wrapper installation failed!"
+echo "--- Building TA-Lib Python wrapper ---"
+python setup.py build_ext --inplace --verbose
 
-# Install the rest of the requirements for FreqTrade
+echo "--- Installing TA-Lib Python wrapper ---"
+pip install . --verbose
+
+# Test the installation
+echo "--- Testing TA-Lib Python installation ---"
+cd "${PROJECT_SRC_DIR}"
+python -c "import talib; print('TA-Lib version:', talib.__version__); print('TA-Lib functions available:', len(talib.get_functions()))" || echo "TA-Lib import test failed"
+
+# Install the rest of the FreqTrade requirements
 echo "--- Installing FreqTrade requirements ---"
 pip install -r requirements.txt --upgrade --verbose
 
