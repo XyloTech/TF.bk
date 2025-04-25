@@ -24,23 +24,21 @@ WORKDIR /tmp
 RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib/ \
+    && sed -i.bak 's/-O3/-O2/g' configure.in configure \
     && ./configure --prefix=/usr/local \
-    && make -j$(nproc) \
+    && make -j$(nproc) CFLAGS="-Wno-error=incompatible-pointer-types -DTA_=TA_" \
     && make install \
     && rm -rf /tmp/ta-lib*
 
 # Stage 3: Node.js builder
 FROM system-base as node-builder
 
-# Install Node.js 20.x (correct path for Debian-based images)
+# Install Node.js 20.x (Debian package locations)
 RUN mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
     && apt-get update && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
-
-# Verify Node.js installation path
-RUN ls -la /usr/bin/node && ls -la /usr/lib/node_modules
 
 # Stage 4: Python environment builder
 FROM system-base as python-builder
@@ -78,7 +76,7 @@ RUN ldconfig
 # Copy Python environment
 COPY --from=python-builder /opt/venv /opt/venv
 
-# Copy Node.js from builder (using correct paths for Debian)
+# Copy Node.js from builder (Debian package locations)
 COPY --from=node-builder /usr/bin/node /usr/local/bin/node
 COPY --from=node-builder /usr/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
