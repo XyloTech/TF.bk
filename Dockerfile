@@ -1,61 +1,109 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.4
 
-# Stage 1: Build TA-Lib C Library
-FROM python:3.10-slim-bookworm as talib_builder
-ARG TA_LIB_VERSION=0.4.0
-ARG TA_LIB_URL=https://github.com/TA-Lib/ta-lib/archive/refs/tags/v${TA_LIB_VERSION}.tar.gz
-ARG INSTALL_PREFIX=/usr/local
+# Stage 1: Core system dependencies
+FROM python:3.10-slim-bookworm as system-base
 
-# Install build dependencies
+# Install essential build tools and dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential wget automake autoconf libtool && \
-    rm -rf /var/lib/apt/lists/*
+    build-essential \
+    wget \
+    curl \
+    ca-certificates \
+    gnupg \
+    automake \
+    autoconf \
+    libtool \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
-# Build TA-Lib
+# Stage 2: TA-Lib builder
+FROM system-base as talib-builder
+
+# Compile TA-Lib with relaxed compiler flags
 WORKDIR /tmp
-RUN wget -q -O ta-lib-src.tar.gz ${TA_LIB_URL} && \
-    tar -xzf ta-lib-src.tar.gz && \
-    cd ta-lib-${TA_LIB_VERSION} && \
-    ./configure --prefix=${INSTALL_PREFIX} && \
-    make -j$(nproc) && \
-    make install
+RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
+    && tar -xzf ta-lib-0.4.0-src.tar.gz \
+    && cd ta-lib/ \
+    && ./configure --prefix=/usr/local \
+    && make -j$(nproc) \
+    && make install \
+    && rm -rf /tmp/ta-lib*
 
-# Stage 2: Final Image
-FROM python:3.10-slim-bookworm
-ARG INSTALL_PREFIX=/usr/local
-WORKDIR /opt/render/project/src
+# Stage 3: Python environment builder
+FROM system-base as python-builder
 
-# Install Node.js 20.x and Python build deps
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl gnupg build-essential cython3 && \
-    mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list && \
-    apt-get update && apt-get install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
-
-# Copy TA-Lib artifacts
-COPY --from=talib_builder ${INSTALL_PREFIX}/lib/libta* ${INSTALL_PREFIX}/lib/
-COPY --from=talib_builder ${INSTALL_PREFIX}/include/ta-lib ${INSTALL_PREFIX}/include/ta-lib
+# Copy compiled TA-Lib
+COPY --from=talib-builder /usr/local/lib/libta* /usr/local/lib/
+COPY --from=talib-builder /usr/local/include/ta-lib /usr/local/include/ta-lib
 RUN ldconfig
 
-# Set TA-Lib env vars
-ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib
-ENV TA_INCLUDE_PATH=${INSTALL_PREFIX}/include
-ENV TA_LIBRARY_PATH=${INSTALL_PREFIX}/lib
+# Create and activate virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Install dependencies
-COPY package.json package-lock.json ./
-COPY requirements.txt ./
-RUN npm install --production && \
-    pip install --no-cache-dir --upgrade pip wheel setuptools && \
+# Install Python dependencies with pinned versions
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip wheel setuptools \
+    && CFLAGS="-Wno-error=incompatible-pointer-types" \
     pip install --no-cache-dir -r requirements.txt
 
-# Verify installations
-RUN python -c "import talib; print('TA-Lib OK:', talib.__version__)" && \
-    node --version && npm --version
+# Stage 4: Node.js builder
+FROM system-base as node-builder
 
-# Copy app code
+# Install Node.js 20.x
+RUN mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Stage 5: Final production image
+FROM python:3.10-slim-bookworm
+
+WORKDIR /opt/render/project/src
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy TA-Lib
+COPY --from=talib-builder /usr/local/lib/libta* /usr/local/lib/
+COPY --from=talib-builder /usr/local/include/ta-lib /usr/local/include/ta-lib
+RUN ldconfig
+
+# Copy Python environment
+COPY --from=python-builder /opt/venv /opt/venv
+
+# Copy Node.js
+COPY --from=node-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
+
+# Environment variables
+ENV PATH="/opt/venv/bin:/usr/local/bin:$PATH"
+ENV LD_LIBRARY_PATH="/usr/local/lib"
+ENV TA_INCLUDE_PATH="/usr/local/include"
+ENV TA_LIBRARY_PATH="/usr/local/lib"
+ENV CFLAGS="-Wno-error=incompatible-pointer-types"
+
+# Install Node.js dependencies
+COPY package.json package-lock.json ./
+RUN npm install --production
+
+# Copy application code
 COPY . .
+
+# Health check and verification
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD python -c "import talib, freqtrade; print('Dependencies OK')" || exit 1
+
+# Verify installations
+RUN python -c "import talib; print(f'TA-Lib {talib.__version__} OK')" \
+    && python -c "import freqtrade; print(f'Freqtrade {freqtrade.__version__} OK')" \
+    && python -c "import numpy; print(f'NumPy {numpy.__version__} OK')" \
+    && node --version \
+    && npm --version
+
 EXPOSE 10000
 CMD ["node", "server.js"]
