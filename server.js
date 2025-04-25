@@ -5,6 +5,7 @@ const http = require("http");
 const cors = require("cors");
 const helmet = require("helmet");
 const config = require("./config/config");
+const requestLogger = require("./middleware/requestLogger");
 
 // --- Middleware ---
 const errorHandler = require("./middleware/errorHandler");
@@ -68,7 +69,7 @@ app.use("/api/transactions", require("./routes/transactionRoutes"));
 app.use("/api/payments", require("./routes/paymentRoutes"));
 app.use("/api/logs", require("./routes/logRoutes"));
 app.use("/api/webhooks", require("./routes/webhookRoutes")); // <<< ADD THIS LINE
-
+app.use("/api/charts", require("./routes/chartRoutes"));
 // --- Global Error Handler (Must be last) ---
 app.use(errorHandler);
 

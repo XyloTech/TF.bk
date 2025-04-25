@@ -41,7 +41,7 @@ module.exports = {
   },
   cors: {
     allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",") || [
-      "http://localhost:3000",
+      "https://botmoon-pro.netlify.app/",
     ],
   },
   telegram: {

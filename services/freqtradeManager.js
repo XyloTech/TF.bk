@@ -63,383 +63,7 @@ process.on("exit", disconnectPm2);
 // --- End PM2 Connection ---
 
 // --- Helper: Ensure Strategy File Exists & Copy ---
-async function ensureStrategyFile(instance, instanceUserDataPath) {
-  const instanceIdStr = instance._id.toString();
-  if (!STRATEGY_SOURCE_DIR)
-    throw new Error(
-      "Strategy source directory (STRATEGY_SOURCE_DIR) is not configured in .env."
-    );
-
-  // Ensure instance.strategy holds the filename (e.g., "MyStrategy.py")
-  const strategyFileName = instance.strategy;
-  if (!strategyFileName)
-    throw new Error(
-      `Strategy filename not defined for instance ${instanceIdStr}`
-    );
-  // Optional: Check for .py extension
-  if (!strategyFileName.toLowerCase().endsWith(".py")) {
-    logger.warn(
-      // Use logger
-      `Strategy name "${strategyFileName}" for instance ${instanceIdStr} might be missing the .py extension.`
-    );
-  }
-
-  const sourceStrategyPath = path.join(STRATEGY_SOURCE_DIR, strategyFileName);
-  const strategiesDestDir = path.join(instanceUserDataPath, "strategies");
-  const destStrategyPath = path.join(strategiesDestDir, strategyFileName);
-  logger.info(
-    // Use logger
-    `ensureStrategyFile: Checking for strategy file: ${sourceStrategyPath}`
-  ); // Log source path
-  logger.debug(
-    // Use logger
-    `ensureStrategyFile: Destination path: ${destStrategyPath}`
-  ); // Log destination path
-
-  try {
-    // 1. Check if source file exists and is readable
-    await fs.access(sourceStrategyPath, fs.constants.R_OK);
-    logger.debug(`Source strategy file found: ${sourceStrategyPath}`); // Use logger
-
-    // 2. Ensure destination directory exists
-    await fs.mkdir(strategiesDestDir, { recursive: true });
-    logger.debug(
-      `Strategies destination directory ensured: ${strategiesDestDir}`
-    ); // Use logger
-
-    // 3. Copy the strategy file
-    await fs.copyFile(sourceStrategyPath, destStrategyPath);
-    logger.info(
-      // Use logger
-      `Copied strategy ${strategyFileName} to ${strategiesDestDir} for instance ${instanceIdStr}`
-    );
-
-    // 4. Return strategy name *without* .py extension for Freqtrade config
-    return strategyFileName.replace(/\.py$/i, ""); // Case-insensitive removal of .py
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      logger.error(`Strategy source file not found: ${sourceStrategyPath}`); // Use logger
-      throw new Error(
-        `Required strategy file '${strategyFileName}' not found in STRATEGY_SOURCE_DIR.`
-      );
-    } else if (error.code === "EACCES") {
-      logger.error(
-        // Use logger
-        `Permission denied accessing strategy source/destination for ${strategyFileName}`
-      );
-      throw new Error(
-        `Permission error handling strategy file '${strategyFileName}'.`
-      );
-    } else {
-      logger.error(
-        // Use logger
-        `Error copying strategy file ${strategyFileName} for instance ${instanceIdStr}:`,
-        error
-      );
-      throw new Error(`Failed to prepare strategy file: ${error.message}`);
-    }
-  }
-}
-
-// --- Helper: Generate Freqtrade Config (Uses Lodash Merge) ---
-async function generateInstanceConfig(instance) {
-  const instanceIdStr = instance._id.toString();
-
-  // Ensure FREQTRADE_USER_DATA_DIR is absolute
-  const absoluteBaseUserDataDir = path.resolve(FREQTRADE_USER_DATA_DIR);
-  if (!absoluteBaseUserDataDir) {
-    // Add a check here in case FREQTRADE_USER_DATA_DIR is not set or invalid
-    throw new Error(
-      "FREQTRADE_USER_DATA_DIR is not defined or could not be resolved."
-    );
-  }
-  logger.debug(
-    `Absolute Base User Data Dir resolved to: ${absoluteBaseUserDataDir}`
-  );
-
-  // Generate ABSOLUTE paths for this instance
-  const instanceUserDataPath = path.join(
-    absoluteBaseUserDataDir, // Use absolute base
-    instanceIdStr
-  );
-  const configFilePath = path.join(instanceUserDataPath, "config.json");
-  // Path for logfile setting inside config (relative to instance user_data_dir is fine here)
-  const logFileName = `freqtrade_${instanceIdStr}.log`;
-  // Absolute path for db_url
-  const dbFilePath = path.join(instanceUserDataPath, "tradesv3.sqlite");
-  // Absolute path for strategies subdir (used later)
-  const strategiesDestDir = path.join(instanceUserDataPath, "strategies");
-
-  // Ensure user data directory for this instance exists
-  try {
-    await fs.mkdir(instanceUserDataPath, { recursive: true });
-    logger.debug(`Ensured user data directory exists: ${instanceUserDataPath}`);
-  } catch (mkdirError) {
-    logger.error(
-      `Failed to create instance user data directory ${instanceUserDataPath}:`,
-      mkdirError
-    );
-    throw new Error(
-      `Failed to create instance user data directory. Check permissions for ${absoluteBaseUserDataDir}. Error: ${mkdirError.message}`
-    );
-  }
-
-  // --- 1. Fetch Bot Template for Defaults ---
-  const botTemplate = await Bot.findById(instance.botId);
-  if (!botTemplate) {
-    logger.warn(
-      // Use logger
-      `Bot template ${instance.botId} not found for instance ${instanceIdStr}. Using minimal defaults.`
-    );
-  }
-  const templateDefaults =
-    botTemplate?.defaultConfig && typeof botTemplate.defaultConfig === "object"
-      ? botTemplate.defaultConfig
-      : {};
-  logger.debug(
-    `Loaded template defaults for bot ${instance.botId}:`,
-    templateDefaults
-  );
-
-  // --- 2. Resolve Strategy and Copy File ---
-  let effectiveStrategyFile = instance.strategy; // May include .py
-  if (!effectiveStrategyFile && botTemplate?.defaultStrategy) {
-    logger.info(
-      // Use logger
-      `Instance ${instanceIdStr} strategy not set, using default from template: ${botTemplate.defaultStrategy}`
-    );
-    effectiveStrategyFile = botTemplate.defaultStrategy;
-  }
-  if (!effectiveStrategyFile) {
-    throw new Error(
-      `Strategy is not defined for instance ${instanceIdStr} and no default found on Bot template ${instance.botId}.`
-    );
-  }
-  // Ensure instance object has the effective strategy filename for ensureStrategyFile
-  instance.strategy = effectiveStrategyFile;
-  // Copy the file and get the name for the config (without .py)
-  // Pass the absolute strategies path to the helper
-  const strategyNameForConfig = await ensureStrategyFile(
-    instance,
-    instanceUserDataPath, // Pass instance user data path base (though not strictly needed by new ensureStrategyFile)
-    strategiesDestDir // Pass absolute strategy dest dir
-  );
-  logger.info(`Using strategy name in config: ${strategyNameForConfig}`);
-
-  // --- 3. Decrypt API Secret ---
-  let decryptedSecretKey;
-  try {
-    decryptedSecretKey = decrypt(instance.apiSecretKey);
-  } catch (error) {
-    // Error is logged within decrypt function if configured
-    logger.error(
-      `Decryption failed for instance ${instanceIdStr}: ${error.message}`
-    ); // Add logging here too
-    throw new Error(
-      `Configuration error: Could not decrypt API secret for instance ${instanceIdStr}. Check CRYPTO_SECRET_KEY and data integrity.`
-    );
-  }
-
-  // --- 4. Define Configuration Layers ---
-  // Layer 1: Backend Managed (Essential, non-overrideable by user/template)
-  const backendManagedConfig = {
-    dry_run: instance.accountType === "demo",
-    exchange: {
-      name: instance.exchange.toLowerCase(),
-      key: instance.apiKey,
-      secret: decryptedSecretKey,
-      // pair_whitelist: [], // Initialized later if needed by StaticPairList sanitization
-    },
-    // --- USE ABSOLUTE PATHS IN CONFIG ---
-    user_data_dir: instanceUserDataPath.replace(/\\/g, "/"), // Freqtrade prefers forward slashes
-    db_url: `sqlite:///${dbFilePath.replace(/\\/g, "/")}`, // Absolute path, forward slashes
-    logfile: logFileName, // Relative path is okay here as it's relative TO user_data_dir
-    // ------------------------------------
-    bot_name: `ft_${instanceIdStr}`,
-    strategy: strategyNameForConfig,
-  };
-  logger.debug(
-    "Backend Managed Config (with absolute paths):",
-    backendManagedConfig
-  );
-
-  // Layer 2: Bot Template Defaults (from Bot model)
-  const templateDefaultConfig = templateDefaults;
-
-  // Layer 3: User Instance Overrides (from instance.config)
-  const userInstanceConfig =
-    instance.config && typeof instance.config === "object"
-      ? instance.config
-      : {};
-  logger.debug(
-    `Instance specific config overrides for ${instanceIdStr}:`,
-    userInstanceConfig
-  );
-
-  // --- 5. Merge User and Template Configs ---
-  let mergedConfig = merge({}, templateDefaultConfig, userInstanceConfig);
-  logger.debug("Merged Template + User Config:", mergedConfig);
-
-  // --- 6. Handle Strategy Specific Parameters ---
-  const strategyParams = userInstanceConfig.strategy_params || {};
-  if (
-    Object.keys(strategyParams).length > 0 &&
-    typeof strategyParams === "object"
-  ) {
-    mergedConfig = merge(mergedConfig, strategyParams); // Merge strategy params into the main config
-    logger.info(
-      // Use logger
-      `Merged strategy_params for instance ${instanceIdStr}:`,
-      Object.keys(strategyParams)
-    );
-  } else if (userInstanceConfig.strategy_params) {
-    logger.warn(
-      // Use logger
-      `Instance ${instanceIdStr}: 'strategy_params' found in config but was not a non-empty object. Ignoring.`
-    );
-  }
-  // Clean up the strategy_params key regardless if it exists at top level after merge
-  delete mergedConfig.strategy_params; // Important to avoid Freqtrade warning
-
-  // --- 7. Combine with Backend Managed Config ---
-  // Backend managed settings ALWAYS take precedence over template/user settings
-  // Merge backendManagedConfig last to ensure it overrides if necessary
-  let finalConfig = merge({}, mergedConfig, backendManagedConfig);
-  logger.debug(
-    "Final Merged Config (Before Sanitization/Overrides):",
-    finalConfig
-  );
-
-  // --- 8. Final Sanitization/Validation ---
-
-  // Ensure pairlists exists, is an array of objects, and contains at least one entry
-  if (
-    !finalConfig.pairlists ||
-    !Array.isArray(finalConfig.pairlists) ||
-    finalConfig.pairlists.length === 0 ||
-    finalConfig.pairlists.some((p) => typeof p !== "object" || !p.method) // Check for object and method key
-  ) {
-    logger.warn(
-      // Use logger
-      `Instance ${instanceIdStr}: Correcting invalid or missing pairlists structure. Defaulting to StaticPairList.`
-    );
-    // Default to StaticPairList if invalid or missing
-    finalConfig.pairlists = [{ method: "StaticPairList" }];
-    // If we default to StaticPairList, we MUST ensure exchange.pair_whitelist exists and is an array
-    // Moved this logic inside the next block for consolidation
-  }
-
-  // If StaticPairList is used (either by default or explicitly), ensure exchange.pair_whitelist exists and is valid
-  if (finalConfig.pairlists[0]?.method === "StaticPairList") {
-    const currentWhitelist = finalConfig.exchange?.pair_whitelist; // Use optional chaining
-    // Check if whitelist is missing, not an array, or empty
-    if (
-      !currentWhitelist ||
-      !Array.isArray(currentWhitelist) ||
-      currentWhitelist.length === 0
-    ) {
-      logger.warn(
-        // Use logger
-        `Instance ${instanceIdStr}: StaticPairList used, but exchange.pair_whitelist missing, invalid, or empty. Checking instance/template 'pairs' or defaulting to ['BTC/USDT'].`
-      );
-      if (!finalConfig.exchange) finalConfig.exchange = {}; // Ensure exchange object exists
-      // Check template or instance config for a 'pairs' key as a fallback before hardcoding
-      const fallbackPairs =
-        userInstanceConfig.pairs || templateDefaultConfig.pairs;
-      finalConfig.exchange.pair_whitelist =
-        Array.isArray(fallbackPairs) && fallbackPairs.length > 0
-          ? fallbackPairs
-          : ["BTC/USDT"]; // Ultimate fallback
-      logger.info(
-        `Instance ${instanceIdStr}: Set exchange.pair_whitelist to: ${JSON.stringify(
-          finalConfig.exchange.pair_whitelist
-        )}`
-      );
-    }
-  }
-
-  // Ensure max_open_trades is valid
-  if (
-    finalConfig.max_open_trades === undefined || // Check if it exists at all
-    typeof finalConfig.max_open_trades !== "number" ||
-    !Number.isInteger(finalConfig.max_open_trades) ||
-    finalConfig.max_open_trades < -1 // -1 means unlimited
-  ) {
-    logger.warn(
-      // Use logger
-      `Instance ${instanceIdStr}: Correcting invalid max_open_trades (${finalConfig.max_open_trades}). Setting to template default or 5.`
-    );
-    const templateMax = templateDefaultConfig.max_open_trades;
-    finalConfig.max_open_trades =
-      typeof templateMax === "number" &&
-      Number.isInteger(templateMax) &&
-      templateMax >= -1
-        ? templateMax
-        : 5; // Sensible fallback (adjust if needed)
-  }
-  // Add more checks as needed
-
-  // --- Apply Debug Overrides --- REMOVE AFTER TESTING ---
-  logger.warn(
-    `Instance ${instanceIdStr}: APPLYING FORCE startup_candle_count to 50 for testing!`
-  );
-  finalConfig.startup_candle_count = 50;
-
-  logger.warn(
-    `Instance ${instanceIdStr}: APPLYING FORCE StaticPairList with BTC/USDT FOR TESTING!`
-  );
-  finalConfig.pairlists = [{ method: "StaticPairList" }];
-  // Ensure exchange object exists before modifying it
-  if (!finalConfig.exchange) {
-    finalConfig.exchange = {};
-  }
-  // Ensure backend keys/secret/name are preserved if they existed
-  finalConfig.exchange = {
-    ...finalConfig.exchange, // Keep existing exchange name, key/secret etc. if set
-    pair_whitelist: ["BTC/USDT"], // Set/override the whitelist under exchange
-  };
-
-  // REMOVE potentially conflicting top-level 'pairs' key if it exists from instance/template config merge
-  if (finalConfig.pairs) {
-    logger.warn(
-      `Instance ${instanceIdStr}: Removing potentially conflicting top-level 'pairs' key for testing.`
-    );
-    delete finalConfig.pairs;
-  }
-  // --- End Debug Overrides ---
-
-  // Final check log before writing
-  logger.debug(
-    `Instance ${instanceIdStr}: finalConfig JUST BEFORE writeFile (WITH OVERRIDES & ABSOLUTE PATHS):`,
-    JSON.stringify(finalConfig, null, 2)
-  );
-
-  // --- 9. Write Config File ---
-  try {
-    const configData = JSON.stringify(finalConfig, null, 2); // Pretty print
-    logger.debug(`Attempting to write config to: ${configFilePath}`);
-    await fs.writeFile(configFilePath, configData);
-    logger.info(
-      `SUCCESS: Wrote config for instance ${instanceIdStr} at ${configFilePath}`
-    );
-    // Return paths needed by the caller (e.g., startFreqtradeProcess)
-    // Return relative log file name as freqtrade process might need it relative to user_data_dir
-    return {
-      configFilePath,
-      logFilePath: logFileName, // Return the relative log file name defined earlier
-      dbFilePath,
-      instanceUserDataPath, // May be useful for the caller
-      strategyName: strategyNameForConfig,
-    };
-  } catch (writeError) {
-    logger.error(`ERROR writing config file ${configFilePath}:`, writeError);
-    throw new Error(
-      `Failed to write configuration file for instance ${instanceIdStr}. Check permissions for ${instanceUserDataPath}. Error: ${writeError.message}`
-    );
-  }
-} // End of generateInstanceConfig function
-
-// Ensure this function definition replaces the old one as well
+// (ensureStrategyFile function remains the same as your latest version)
 async function ensureStrategyFile(
   instance,
   instanceUserDataPath,
@@ -546,10 +170,284 @@ async function ensureStrategyFile(
   }
 }
 
-// Remember to ensure that startFreqtradeProcess and stopFreqtradeProcess
-// correctly use the paths returned by this updated generateInstanceConfig function.
-// Specifically, they should use `configFilePath` when constructing the command line arguments.
+// --- Helper: Generate Freqtrade Config (Uses Lodash Merge) ---
+async function generateInstanceConfig(instance) {
+  const instanceIdStr = instance._id.toString();
+
+  // Ensure FREQTRADE_USER_DATA_DIR is absolute
+  const absoluteBaseUserDataDir = path.resolve(FREQTRADE_USER_DATA_DIR);
+  if (!absoluteBaseUserDataDir) {
+    throw new Error(
+      "FREQTRADE_USER_DATA_DIR is not defined or could not be resolved."
+    );
+  }
+  logger.debug(
+    `Absolute Base User Data Dir resolved to: ${absoluteBaseUserDataDir}`
+  );
+
+  // Generate ABSOLUTE paths for this instance
+  const instanceUserDataPath = path.join(
+    absoluteBaseUserDataDir,
+    instanceIdStr
+  );
+  const configFilePath = path.join(instanceUserDataPath, "config.json");
+  const logFileName = `freqtrade_${instanceIdStr}.log`;
+  // dbFilePath is now only needed for the SQLite fallback case
+  const dbFilePath = path.join(instanceUserDataPath, "tradesv3.sqlite");
+  const strategiesDestDir = path.join(instanceUserDataPath, "strategies");
+
+  // Ensure user data directory for this instance exists
+  try {
+    await fs.mkdir(instanceUserDataPath, { recursive: true });
+    logger.debug(`Ensured user data directory exists: ${instanceUserDataPath}`);
+  } catch (mkdirError) {
+    logger.error(
+      `Failed to create instance user data directory ${instanceUserDataPath}:`,
+      mkdirError
+    );
+    throw new Error(
+      `Failed to create instance user data directory. Check permissions for ${absoluteBaseUserDataDir}. Error: ${mkdirError.message}`
+    );
+  }
+
+  // --- 1. Fetch Bot Template for Defaults ---
+  // ... (same as before) ...
+  const botTemplate = await Bot.findById(instance.botId);
+  if (!botTemplate) {
+    logger.warn(
+      `Bot template ${instance.botId} not found for instance ${instanceIdStr}. Using minimal defaults.`
+    );
+  }
+  const templateDefaults =
+    botTemplate?.defaultConfig && typeof botTemplate.defaultConfig === "object"
+      ? botTemplate.defaultConfig
+      : {};
+  logger.debug(
+    `Loaded template defaults for bot ${instance.botId}:`,
+    templateDefaults
+  );
+
+  // --- 2. Resolve Strategy and Copy File ---
+  // ... (same as before) ...
+  let effectiveStrategyFile = instance.strategy;
+  if (!effectiveStrategyFile && botTemplate?.defaultStrategy) {
+    logger.info(
+      `Instance ${instanceIdStr} strategy not set, using default from template: ${botTemplate.defaultStrategy}`
+    );
+    effectiveStrategyFile = botTemplate.defaultStrategy;
+  }
+  if (!effectiveStrategyFile) {
+    throw new Error(
+      `Strategy is not defined for instance ${instanceIdStr} and no default found on Bot template ${instance.botId}.`
+    );
+  }
+  instance.strategy = effectiveStrategyFile;
+  const strategyNameForConfig = await ensureStrategyFile(
+    instance,
+    instanceUserDataPath,
+    strategiesDestDir
+  );
+  logger.info(`Using strategy name in config: ${strategyNameForConfig}`);
+
+  // --- 3. Decrypt API Secret ---
+  // ... (same as before) ...
+  let decryptedSecretKey;
+  try {
+    decryptedSecretKey = decrypt(instance.apiSecretKey);
+  } catch (error) {
+    logger.error(
+      `Decryption failed for instance ${instanceIdStr}: ${error.message}`
+    );
+    throw new Error(
+      `Configuration error: Could not decrypt API secret for instance ${instanceIdStr}. Check CRYPTO_SECRET_KEY and data integrity.`
+    );
+  }
+
+  // --- 4. Determine DB URL (PostgreSQL or SQLite Fallback) --- START OF CHANGE ---
+  const pgUser = process.env.FT_PG_USER;
+  const pgPassword = process.env.FT_PG_PASSWORD;
+  const pgHost = process.env.FT_PG_HOST;
+  const pgPort = process.env.FT_PG_PORT || "5432"; // Default PG port
+  const pgDatabase = process.env.FT_PG_DATABASE;
+
+  let dbUrl; // Variable to hold the final DB URL
+
+  if (pgUser && pgPassword && pgHost && pgDatabase) {
+    // Use PostgreSQL if all required environment variables are set
+    // Use encodeURIComponent for user/password in case they contain special characters
+    dbUrl = `postgresql+psycopg2://${encodeURIComponent(
+      pgUser
+    )}:${encodeURIComponent(
+      pgPassword
+    )}@${pgHost}:${pgPort}/${encodeURIComponent(pgDatabase)}`;
+    logger.info(
+      `Instance ${instanceIdStr}: Using PostgreSQL database connection.`
+    );
+  } else {
+    // Fallback to SQLite (useful for local dev, but WILL NOT PERSIST ON RENDER FREE TIER)
+    logger.warn(
+      `Instance ${instanceIdStr}: PostgreSQL environment variables not fully set (FT_PG_USER, FT_PG_PASSWORD, FT_PG_HOST, FT_PG_DATABASE must all be present). Falling back to SQLite (WILL NOT PERSIST ON RENDER FREE TIER).`
+    );
+    // dbFilePath defined earlier
+    dbUrl = `sqlite:///${dbFilePath.replace(/\\/g, "/")}`;
+  }
+  // --- END OF CHANGE ---
+
+  // --- 5. Define Configuration Layers ---
+  const backendManagedConfig = {
+    dry_run: instance.accountType === "demo",
+    exchange: {
+      name: instance.exchange.toLowerCase(),
+      key: instance.apiKey,
+      secret: decryptedSecretKey,
+    },
+    user_data_dir: instanceUserDataPath.replace(/\\/g, "/"),
+    db_url: dbUrl, // <--- Use the determined dbUrl (PostgreSQL or SQLite)
+    logfile: logFileName,
+    bot_name: `ft_${instanceIdStr}`,
+    strategy: strategyNameForConfig,
+  };
+  logger.debug(
+    "Backend Managed Config (with absolute paths):",
+    backendManagedConfig // This will now show the correct db_url
+  );
+
+  // Layer 2: Bot Template Defaults
+  // ... (same as before) ...
+  const templateDefaultConfig = templateDefaults;
+
+  // Layer 3: User Instance Overrides
+  // ... (same as before) ...
+  const userInstanceConfig =
+    instance.config && typeof instance.config === "object"
+      ? instance.config
+      : {};
+  logger.debug(
+    `Instance specific config overrides for ${instanceIdStr}:`,
+    userInstanceConfig
+  );
+
+  // --- 6. Merge User and Template Configs ---
+  // ... (same as before) ...
+  let mergedConfig = merge({}, templateDefaultConfig, userInstanceConfig);
+  logger.debug("Merged Template + User Config:", mergedConfig);
+
+  // --- 7. Handle Strategy Specific Parameters ---
+  // ... (same as before) ...
+  const strategyParams = userInstanceConfig.strategy_params || {};
+  if (
+    Object.keys(strategyParams).length > 0 &&
+    typeof strategyParams === "object"
+  ) {
+    mergedConfig = merge(mergedConfig, strategyParams);
+    logger.info(
+      `Merged strategy_params for instance ${instanceIdStr}:`,
+      Object.keys(strategyParams)
+    );
+  } else if (userInstanceConfig.strategy_params) {
+    logger.warn(
+      `Instance ${instanceIdStr}: 'strategy_params' found in config but was not a non-empty object. Ignoring.`
+    );
+  }
+  delete mergedConfig.strategy_params;
+
+  // --- 8. Combine with Backend Managed Config ---
+  // ... (same as before) ...
+  let finalConfig = merge({}, mergedConfig, backendManagedConfig);
+  logger.debug("Final Merged Config (Before Sanitization):", finalConfig);
+
+  // --- 9. Final Sanitization/Validation ---
+  // ... (same sanitization logic for pairlists, max_open_trades, etc. as before) ...
+  if (
+    !finalConfig.pairlists ||
+    !Array.isArray(finalConfig.pairlists) ||
+    finalConfig.pairlists.length === 0 ||
+    finalConfig.pairlists.some((p) => typeof p !== "object" || !p.method)
+  ) {
+    logger.warn(
+      `Instance ${instanceIdStr}: Correcting invalid or missing pairlists structure. Defaulting to StaticPairList.`
+    );
+    finalConfig.pairlists = [{ method: "StaticPairList" }];
+  }
+
+  if (finalConfig.pairlists[0]?.method === "StaticPairList") {
+    const currentWhitelist = finalConfig.exchange?.pair_whitelist;
+    if (
+      !currentWhitelist ||
+      !Array.isArray(currentWhitelist) ||
+      currentWhitelist.length === 0
+    ) {
+      logger.warn(
+        `Instance ${instanceIdStr}: StaticPairList used, but exchange.pair_whitelist missing, invalid, or empty. Checking instance/template 'pairs' or defaulting to ['BTC/USDT'].`
+      );
+      if (!finalConfig.exchange) finalConfig.exchange = {};
+      const fallbackPairs =
+        userInstanceConfig.pairs || templateDefaultConfig.pairs;
+      finalConfig.exchange.pair_whitelist =
+        Array.isArray(fallbackPairs) && fallbackPairs.length > 0
+          ? fallbackPairs
+          : ["BTC/USDT"];
+      logger.info(
+        `Instance ${instanceIdStr}: Set exchange.pair_whitelist to: ${JSON.stringify(
+          finalConfig.exchange.pair_whitelist
+        )}`
+      );
+    }
+  }
+
+  if (
+    finalConfig.max_open_trades === undefined ||
+    typeof finalConfig.max_open_trades !== "number" ||
+    !Number.isInteger(finalConfig.max_open_trades) ||
+    finalConfig.max_open_trades < -1
+  ) {
+    logger.warn(
+      `Instance ${instanceIdStr}: Correcting invalid max_open_trades (${finalConfig.max_open_trades}). Setting to template default or 5.`
+    );
+    const templateMax = templateDefaultConfig.max_open_trades;
+    finalConfig.max_open_trades =
+      typeof templateMax === "number" &&
+      Number.isInteger(templateMax) &&
+      templateMax >= -1
+        ? templateMax
+        : 5;
+  }
+
+  // --- Final check log before writing ---
+  logger.debug(
+    `Instance ${instanceIdStr}: finalConfig JUST BEFORE writeFile (AFTER SANITIZATION & ABSOLUTE PATHS):`,
+    JSON.stringify(finalConfig, null, 2)
+  );
+
+  // --- 10. Write Config File ---
+  // ... (same as before) ...
+  try {
+    const configData = JSON.stringify(finalConfig, null, 2);
+    logger.debug(`Attempting to write config to: ${configFilePath}`);
+    await fs.writeFile(configFilePath, configData);
+    logger.info(
+      `SUCCESS: Wrote config for instance ${instanceIdStr} at ${configFilePath}`
+    );
+    // Return dbFilePath only if SQLite was used, maybe adjust return object?
+    // For simplicity, keep return object same for now.
+    return {
+      configFilePath,
+      logFilePath: logFileName,
+      // dbFilePath is less relevant if using PG, but keep for consistency or remove if preferred
+      dbFilePath: dbUrl.startsWith("sqlite") ? dbFilePath : null,
+      instanceUserDataPath,
+      strategyName: strategyNameForConfig,
+    };
+  } catch (writeError) {
+    logger.error(`ERROR writing config file ${configFilePath}:`, writeError);
+    throw new Error(
+      `Failed to write configuration file for instance ${instanceIdStr}. Check permissions for ${instanceUserDataPath}. Error: ${writeError.message}`
+    );
+  }
+} // End of generateInstanceConfig function
+
 // --- Start Freqtrade Process (Uses generateInstanceConfig) ---
+// (startFreqtradeProcess function remains the same as your latest version)
 async function startFreqtradeProcess(instanceId) {
   await connectPm2();
   const instanceIdStr = instanceId.toString();
@@ -747,6 +645,7 @@ async function startFreqtradeProcess(instanceId) {
 }
 
 // --- Stop Freqtrade Process ---
+// (stopFreqtradeProcess function remains the same as your latest version)
 async function stopFreqtradeProcess(instanceId, markInactive = false) {
   await connectPm2();
   const instanceIdStr = instanceId.toString();

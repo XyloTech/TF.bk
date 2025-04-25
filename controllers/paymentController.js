@@ -396,41 +396,89 @@ exports.nowPaymentsWebhook = async (req, res) => {
 
 // 🔹 Get Payment Status (For Frontend Polling)
 exports.getPaymentStatus = async (req, res) => {
+  const operation = "getPaymentStatus";
   const { ref } = req.query;
+
+  // Ensure user is authenticated and req.userDB is populated by middleware
+  if (!req.userDB || !req.userDB._id) {
+    logger.error({
+      operation,
+      message: "Authentication missing in getPaymentStatus",
+    });
+    return res.status(401).json({ message: "Authentication required." });
+  }
   const userId = req.userDB._id;
 
   if (!ref) {
+    logger.warn({ operation, message: "Missing reference ID", userId });
     return res
       .status(400)
       .json({ message: "Missing transaction reference ID." });
   }
 
   try {
+    logger.info({
+      operation,
+      message: "Fetching payment status",
+      referenceId: ref,
+      userId,
+    });
     const tx = await Transaction.findOne({
       referenceId: ref,
-      userId: userId,
+      userId: userId, // Ensure user owns this transaction
     }).select(
-      "-metadata.invoiceId -metadata.paymentIdNowPayments -metadata.payinHash"
-    ); // Exclude some sensitive metadata maybe
+      // Select necessary fields, including the one holding the instance ID
+      "referenceId status amount createdAt metadata.botId metadata.botName metadata.paymentStatusNowPayments metadata.paymentUrl metadata.processedInstanceId"
+      // Removed exclusion of sensitive fields, assuming they are not needed or handled by model's toJSON if necessary
+    );
 
     if (!tx) {
+      logger.warn({
+        operation,
+        message: "Transaction not found or access denied",
+        referenceId: ref,
+        userId,
+      });
       return res
         .status(404)
         .json({ message: "Transaction not found or access denied." });
     }
 
-    res.json({
+    // --- Construct the response ---
+    const responseData = {
       referenceId: tx.referenceId,
       status: tx.status, // Our internal status ('pending', 'approved', 'rejected')
-      botId: tx.metadata.botId,
-      botName: tx.metadata.botName,
+      botId: tx.metadata?.botId, // Use optional chaining
+      botName: tx.metadata?.botName, // Use optional chaining
       amount: tx.amount,
       createdAt: tx.createdAt,
-      paymentStatusNowPayments: tx.metadata.paymentStatusNowPayments, // Status from NowPayments
-      paymentUrl: tx.status === "pending" ? tx.metadata.paymentUrl : undefined, // Only show URL if still pending
+      paymentStatusNowPayments: tx.metadata?.paymentStatusNowPayments, // Use optional chaining
+      paymentUrl: tx.status === "pending" ? tx.metadata?.paymentUrl : undefined, // Use optional chaining
+
+      // --- Include botInstanceId only if status is approved ---
+      botInstanceId:
+        tx.status === "approved" ? tx.metadata?.processedInstanceId : undefined,
+      // --------------------------------------------------------
+    };
+
+    logger.info({
+      operation,
+      message: "Payment status retrieved successfully",
+      referenceId: ref,
+      userId,
+      responseStatus: responseData.status,
+      hasInstanceId: !!responseData.botInstanceId,
     });
+    res.json(responseData);
   } catch (err) {
-    console.error("Error fetching payment status:", err);
+    logger.error({
+      operation,
+      message: "Error fetching payment status",
+      referenceId: ref,
+      userId,
+      error: err.message,
+      stack: err.stack,
+    });
     res.status(500).json({ message: "Error retrieving payment status." });
   }
 };
