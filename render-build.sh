@@ -11,7 +11,7 @@ INSTALL_PREFIX="${PROJECT_SRC_DIR}/talib_install" # Install locally
 
 # Define TA-Lib C library version and download URL
 TA_LIB_VERSION="0.4.0"
-TA_LIB_URL="http://prdownloads.sourceforge.net/ta-lib/ta-lib-${TA_LIB_VERSION}-src.tar.gz"
+TA_LIB_URL="https://github.com/TA-Lib/ta-lib/archive/refs/tags/v${TA_LIB_VERSION}.tar.gz"
 
 echo "--- Installing Build Dependencies ---"
 apt-get update && apt-get install -y --no-install-recommends \
@@ -21,23 +21,29 @@ apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     pkg-config \
+    automake \
+    autoconf \
+    libtool \
  && rm -rf /var/lib/apt/lists/*
 
 echo "--- Downloading and Building TA-Lib C Library (Version ${TA_LIB_VERSION}) ---"
 BUILD_DIR=$(mktemp -d)
+chmod 755 "${BUILD_DIR}"
 cd "${BUILD_DIR}"
 
 echo "Downloading from ${TA_LIB_URL}..."
 wget -q -O ta-lib-src.tar.gz ${TA_LIB_URL}
 tar -xzf ta-lib-src.tar.gz
-cd ta-lib/
+cd ta-lib-${TA_LIB_VERSION}/
 
 echo "--- Configuring TA-Lib (installing LOCALLY to ${INSTALL_PREFIX}) ---"
-# Configure the build, specifying the LOCAL installation prefix
+# Run autoreconf first to generate configure script
+autoreconf --install || { echo 'autoreconf failed'; exit 1; }
 ./configure --prefix=${INSTALL_PREFIX} || { echo './configure failed'; exit 1; }
 
 echo "--- Compiling TA-Lib C library ---"
-make -j$(nproc) || { echo 'make failed'; exit 1; }
+make clean || echo "make clean failed, continuing anyway"
+make || { echo 'make failed'; exit 1; }
 
 echo "--- Installing TA-Lib C library to ${INSTALL_PREFIX} ---"
 make install || { echo 'make install failed'; exit 1; }
