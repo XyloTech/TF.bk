@@ -6,13 +6,14 @@ ARG TA_LIB_URL=http://prdownloads.sourceforge.net/ta-lib/ta-lib-${TA_LIB_VERSION
 ARG INSTALL_PREFIX=/usr/local
 
 # Install build dependencies for TA-Lib C library
+# Running as root inside Docker build context
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     wget \
     make \
     && rm -rf /var/lib/apt/lists/*
 
-# Download, build, and install TA-Lib C library
+# Download, build, and install TA-Lib C library system-wide in this stage
 WORKDIR /tmp
 RUN wget -q -O ta-lib-src.tar.gz ${TA_LIB_URL} && \
     tar -xzf ta-lib-src.tar.gz && \
@@ -29,7 +30,8 @@ FROM python:3.10-slim-bookworm
 ARG INSTALL_PREFIX=/usr/local
 WORKDIR /opt/render/project/src
 
-# --- Install Node.js AND Build Tools needed for pip install --- MODIFIED HERE ---
+# Install Node.js AND Build Tools needed for pip install in the final stage
+# Running as root inside Docker build context
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -42,18 +44,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
     && apt-get update && apt-get install nodejs -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
-# --- END MODIFICATION ---
 
-# Copy TA-Lib library/headers from the builder stage
+# Copy TA-Lib library/headers from the builder stage to the standard location
 COPY --from=talib_builder ${INSTALL_PREFIX}/lib/libta* ${INSTALL_PREFIX}/lib/
 COPY --from=talib_builder ${INSTALL_PREFIX}/include/ta-lib ${INSTALL_PREFIX}/include/ta-lib
 
-# Set environment variables for TA-Lib (both build-time and run-time)
+# Update linker cache after copying libraries
+RUN ldconfig
+
+# Set environment variables for TA-Lib (needed for pip install AND runtime)
+# Point to the standard location where we copied the files
 ENV C_INCLUDE_PATH=${INSTALL_PREFIX}/include:${C_INCLUDE_PATH}
 ENV LIBRARY_PATH=${INSTALL_PREFIX}/lib:${LIBRARY_PATH}
 ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH}
 
-# Copy application files (package*, requirements)
+# Copy application dependency files
 COPY package.json package-lock.json ./
 COPY requirements.txt ./
 
@@ -63,7 +68,9 @@ RUN npm install --production
 # Install Python dependencies
 # Ensure NumPy < 1.24 and TA-Lib == 0.4.24 are in requirements.txt
 RUN pip install --no-cache-dir --upgrade pip wheel setuptools && \
-    pip install --no-cache-dir -r requirements.txt
+    # Explicitly set CFLAGS here to ignore the specific warning causing the error
+    export CFLAGS="-Wno-error=incompatible-pointer-types" && \
+    pip install --no-cache-dir -r requirements.txt --verbose
 
 # Copy the rest of your application code
 COPY . .
