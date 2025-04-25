@@ -19,14 +19,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Stage 2: TA-Lib builder
 FROM system-base as talib-builder
 
-# Compile TA-Lib with sequential build to avoid race conditions
+# Compile TA-Lib with specific fixes for the gen_code issue
 WORKDIR /tmp
 RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib/ \
     && sed -i.bak 's/-O3/-O2/g' configure.in configure \
+    # Apply patch to fix the gen_code compilation issue
+    && sed -i 's/TA_/TA_/g' src/tools/gen_code/gen_code.c \
     && ./configure --prefix=/usr/local \
+    # Build sequentially first to generate necessary files
     && make -j1 CFLAGS="-Wno-error=incompatible-pointer-types -DTA_=TA_" \
+    # Then build in parallel
+    && make -j$(nproc) \
     && make install \
     && rm -rf /tmp/ta-lib*
 
