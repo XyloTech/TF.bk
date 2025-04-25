@@ -64,6 +64,7 @@ echo "C_INCLUDE_PATH=${C_INCLUDE_PATH}"
 echo "LIBRARY_PATH=${LIBRARY_PATH}"
 echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
 
+
 # --- Go back to the project source directory ---
 echo "--- Changing directory back to ${PROJECT_SRC_DIR} ---"
 cd "${PROJECT_SRC_DIR}"
@@ -75,12 +76,12 @@ echo "--- Installing Python dependencies ---"
 pip install --upgrade pip wheel setuptools # Ensure build tools are present
 
 # --- Install NumPy < 1.24 (to fix the 'subarray' error) ---
-echo "--- Installing NumPy < 1.24 (required by TA-Lib wrapper) ---"
+echo "--- Installing NumPy < 1.24 ---"
 pip install "numpy<1.24" --verbose # Pin numpy version
 
-echo "--- Installing Python requirements (including TA-Lib wrapper) ---"
-# Make sure requirements.txt lists TA-Lib (e.g., TA-Lib==0.4.28)
-# Pip will now use the C library installed LOCALLY in ${INSTALL_PREFIX} and the older NumPy
+echo "--- Installing Python requirements (incl. specific TA-Lib version) ---"
+# Pip will now use the C library installed LOCALLY in ${INSTALL_PREFIX},
+# the older NumPy, AND the specific TA-Lib version from requirements.txt
 pip install -r requirements.txt --verbose
 
 echo "--- Build finished ---"
