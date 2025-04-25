@@ -1,86 +1,103 @@
 #!/usr/bin/env bash
-# exit on error
+# Exit on error AND print commands executed
 set -o errexit
+set -x # Print each command before executing it
 
+# --- Project Directory (Ensure this is correct for Render) ---
+PROJECT_SRC_DIR="/opt/render/project/src"
+# --- Installation Prefix (Local within the project) ---
+INSTALL_PREFIX="${PROJECT_SRC_DIR}/talib_install" # Install locally
 
 # Define TA-Lib C library version and download URL
-TA_LIB_VERSION="0.4.0" # Common version, check if you need a specific one
+TA_LIB_VERSION="0.4.0"
 TA_LIB_URL="http://prdownloads.sourceforge.net/ta-lib/ta-lib-${TA_LIB_VERSION}-src.tar.gz"
-INSTALL_PREFIX="/usr/local" # Standard installation location
 
-echo "--- Installing Build Dependencies ---"
-# Need tools to download and compile C code
-# Using sudo for system-wide package installation
-sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+echo "--- Installing Build Dependencies (NO SUDO NEEDED for these tools) ---"
+# Install essential tools using apt-get (assuming this works without sudo for basic package install)
+# If apt-get itself fails here, a different approach (like Docker) is needed.
+apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     wget \
     make \
- && sudo rm -rf /var/lib/apt/lists/* # Optional: Clean up apt cache
+ && rm -rf /var/lib/apt/lists/* # Optional: Clean up apt cache
 
 echo "--- Downloading and Building TA-Lib C Library (Version ${TA_LIB_VERSION}) ---"
-# Create a temporary directory for building
 BUILD_DIR=$(mktemp -d)
 cd "${BUILD_DIR}"
 
-# Download the source code
 echo "Downloading from ${TA_LIB_URL}..."
 wget -q -O ta-lib-src.tar.gz ${TA_LIB_URL}
 tar -xzf ta-lib-src.tar.gz
-cd ta-lib/ # Navigate into the extracted source directory
+cd ta-lib/
 
-echo "--- Configuring TA-Lib (installing to ${INSTALL_PREFIX}) ---"
-# Configure the build, specifying the installation prefix
-# This generates the Makefile based on the system environment
-./configure --prefix=${INSTALL_PREFIX}
+echo "--- Configuring TA-Lib (installing LOCALLY to ${INSTALL_PREFIX}) ---"
+# Configure the build, specifying the LOCAL installation prefix
+# Exit immediately if configure fails
+./configure --prefix=${INSTALL_PREFIX} || { echo './configure failed'; exit 1; }
 
 echo "--- Compiling TA-Lib ---"
 # Compile the C code using the generated Makefile
-make
+# Exit immediately if make fails
+make || { echo 'make failed'; exit 1; }
 
-echo "--- Installing TA-Lib C library (requires sudo) ---"
-# Install the compiled library and headers to the prefix location
-# Needs sudo because /usr/local is a system directory
-sudo make install
+echo "--- Installing TA-Lib C library (LOCALLY, NO SUDO) ---"
+# Install the compiled library and headers to the LOCAL prefix location
+# NO SUDO needed because INSTALL_PREFIX is local and writable
+make install || { echo 'make install failed'; exit 1; }
+# NO sudo ldconfig needed for local install
+
+echo "--- Verifying LOCAL C Library Installation ---"
+# Check right after installation if the header file exists where expected
+if [ -f "${INSTALL_PREFIX}/include/ta-lib/ta_defs.h" ]; then
+    echo "SUCCESS: Found ${INSTALL_PREFIX}/include/ta-lib/ta_defs.h"
+else
+    echo "ERROR: Did NOT find ${INSTALL_PREFIX}/include/ta-lib/ta_defs.h after local make install!"
+    # Also list the contents of the target directories for clues
+    echo "Listing ${INSTALL_PREFIX}/include/ ..."
+    ls -l "${INSTALL_PREFIX}/include/" || true # Use || true to prevent exit if dir not found
+    echo "Listing ${INSTALL_PREFIX}/lib/ ..."
+    ls -l "${INSTALL_PREFIX}/lib/" || true
+    exit 1 # Exit if the essential header isn't found
+fi
 
 echo "--- Cleaning up TA-Lib source ---"
 # Go back up and remove the temporary build directory
 cd / # Go to root or another safe directory before removing BUILD_DIR
 rm -rf "${BUILD_DIR}"
 
-# --- Set Environment Variables (Explicitly point to the install location) ---
+# --- Set Environment Variables (Pointing to LOCAL install location) ---
 # This helps pip's build process find the manually installed library/headers
 echo "--- Setting Environment Variables for TA-Lib ---"
-export C_INCLUDE_PATH=${INSTALL_PREFIX}/include:$C_INCLUDE_PATH
-export CPLUS_INCLUDE_PATH=${INSTALL_PREFIX}/include:$CPLUS_INCLUDE_PATH
-export LIBRARY_PATH=${INSTALL_PREFIX}/lib:$LIBRARY_PATH
-export LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:$LD_LIBRARY_PATH
-# Tell pkg-config where to find the .pc file if TA-Lib installs one
-export PKG_CONFIG_PATH=${INSTALL_PREFIX}/lib/pkgconfig:$PKG_CONFIG_PATH
+export C_INCLUDE_PATH=${INSTALL_PREFIX}/include:${C_INCLUDE_PATH:-} # Append, handle if var unset
+export CPLUS_INCLUDE_PATH=${INSTALL_PREFIX}/include:${CPLUS_INCLUDE_PATH:-}
+export LIBRARY_PATH=${INSTALL_PREFIX}/lib:${LIBRARY_PATH:-}
+export LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH:-} # This helps find the .so file at runtime
+export PKG_CONFIG_PATH=${INSTALL_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}
+# Verify the variables are set (optional, but useful for debugging)
+echo "C_INCLUDE_PATH=${C_INCLUDE_PATH}"
+echo "LIBRARY_PATH=${LIBRARY_PATH}"
+echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" # Print this one too
 
-# --- DIAGNOSTIC COMMANDS (After Manual Install) ---
-# Verify that the files were installed where expected
-echo "--- Checking TA-Lib installation in ${INSTALL_PREFIX} ---"
-find ${INSTALL_PREFIX} -name ta_defs.h || echo "${INSTALL_PREFIX}: ta_defs.h not found"
-find ${INSTALL_PREFIX} -name libta_lib.a || echo "${INSTALL_PREFIX}: libta_lib.a not found"
-find ${INSTALL_PREFIX} -name libta_lib.so || echo "${INSTALL_PREFIX}: libta_lib.so not found"
-ls -l ${INSTALL_PREFIX}/include/ta-lib/ || echo "${INSTALL_PREFIX}/include/ta-lib not found"
-ls -l ${INSTALL_PREFIX}/lib/ || echo "${INSTALL_PREFIX}/lib not found"
-echo "--- End TA-Lib checks ---"
 
-# --- Go back to the original project source directory ---
-# IMPORTANT: Ensure this path is correct for Render's build environment
-# Render typically clones into /opt/render/project/src
-PROJECT_SRC_DIR="/opt/render/project/src"
-echo "--- Changing directory to ${PROJECT_SRC_DIR} ---"
+# --- Go back to the project source directory ---
+echo "--- Changing directory back to ${PROJECT_SRC_DIR} ---"
 cd "${PROJECT_SRC_DIR}"
+
 echo "--- Installing Node.js dependencies ---"
-# Consider using --production if you don't need devDependencies on Render
+# Make sure package.json is in PROJECT_SRC_DIR
 npm install --production
 
 echo "--- Installing Python dependencies ---"
-pip install --upgrade pip
-pip install -r requirements.txt # Install from your requirements file
+# Make sure requirements.txt is in PROJECT_SRC_DIR
+pip install --upgrade pip wheel setuptools # Ensure build tools are present
 
-# No need to copy strategies or config template here - freqtradeManager handles it
+echo "--- Installing NumPy (required by TA-Lib wrapper) ---"
+# Install numpy first as TA-Lib setup needs it
+pip install numpy --verbose
+
+echo "--- Installing Python requirements (including TA-Lib wrapper) ---"
+# Make sure requirements.txt lists TA-Lib (e.g., TA-Lib==0.4.28)
+# Pip will now use the C library installed LOCALLY in ${INSTALL_PREFIX}
+pip install -r requirements.txt --verbose
 
 echo "--- Build finished ---"
