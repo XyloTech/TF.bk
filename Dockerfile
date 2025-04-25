@@ -19,26 +19,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Stage 2: TA-Lib builder
 FROM system-base as talib-builder
 
-# Compile TA-Lib with specific fixes for the gen_code issue
+# Install specific automake version needed by TA-Lib
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    automake-1.15 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Compile TA-Lib with all known fixes
 WORKDIR /tmp
 RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib/ \
-    && sed -i.bak 's/-O3/-O2/g' configure.in configure \
-    # Apply patch to fix the gen_code compilation issue
-    && sed -i 's/TA_/TA_/g' src/tools/gen_code/gen_code.c \
+    && autoreconf -i \
     && ./configure --prefix=/usr/local \
-    # Build sequentially first to generate necessary files
-    && make -j1 CFLAGS="-Wno-error=incompatible-pointer-types -DTA_=TA_" \
-    # Then build in parallel
-    && make -j$(nproc) \
+    && make -j$(nproc) CFLAGS="-Wno-error=incompatible-pointer-types -DTA_=TA_" \
     && make install \
     && rm -rf /tmp/ta-lib*
 
 # Stage 3: Node.js builder
 FROM system-base as node-builder
 
-# Install Node.js 20.x (Debian package locations)
+# Install Node.js 20.x
 RUN mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
@@ -57,7 +57,7 @@ RUN ldconfig
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies with pinned versions
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip wheel setuptools \
     && CFLAGS="-Wno-error=incompatible-pointer-types" \
@@ -81,7 +81,7 @@ RUN ldconfig
 # Copy Python environment
 COPY --from=python-builder /opt/venv /opt/venv
 
-# Copy Node.js from builder (Debian package locations)
+# Copy Node.js
 COPY --from=node-builder /usr/bin/node /usr/local/bin/node
 COPY --from=node-builder /usr/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
@@ -103,7 +103,6 @@ COPY . .
 # Verify installations
 RUN python -c "import talib; print(f'TA-Lib {talib.__version__} OK')" \
     && python -c "import freqtrade; print(f'Freqtrade {freqtrade.__version__} OK')" \
-    && python -c "import numpy; print(f'NumPy {numpy.__version__} OK')" \
     && node --version \
     && npm --version
 
