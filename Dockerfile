@@ -25,17 +25,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtool \
     && rm -rf /var/lib/apt/lists/*
 
-# Compile TA-Lib with fixes for modern systems
+# Compile TA-Lib with all known fixes
 WORKDIR /tmp
-RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
-    && tar -xzf ta-lib-0.4.0-src.tar.gz \
+RUN git clone https://github.com/mrjbq7/ta-lib.git \
     && cd ta-lib \
+    && git checkout 0.4.0 \
     && ./configure --prefix=/usr/local \
-    # Apply necessary fixes for the gen_code tool compilation
+    # Apply all known fixes
     && sed -i 's/TA_Real\* close/TA_Real \*close/' src/ta_func/ta_utility.h \
+    # First build without parallel compilation to avoid race conditions
+    && make -j1 \
+    # Then rebuild with parallel compilation for faster builds
+    && make clean \
     && make -j$(nproc) \
     && make install \
-    && rm -rf /tmp/ta-lib*
+    && rm -rf /tmp/ta-lib
 
 # Stage 3: Node.js builder
 FROM system-base as node-builder
