@@ -19,6 +19,6 @@ const TradeSchema = new mongoose.Schema(
 );
 
 // 🔹 Index for performance
-TradeSchema.index({ botInstanceId: 1 });
+TradeSchema.index({ botInstanceId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Trade", TradeSchema);

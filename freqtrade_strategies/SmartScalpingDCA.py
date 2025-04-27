@@ -12,13 +12,12 @@ from freqtrade.persistence import Trade
 from functools import reduce
 from scipy.optimize import minimize
 
-logger = logging.getLogger(_name_)
-
+logger = logging.getLogger(__name__)  # ✅ Corrected
 
 # ================== Settings ==================
 class Config:
     RISK_PER_TRADE = 0.02  # 2% risk
-    MAX_DCA_LEVELS = 3     # How many DCA orders allowed
+    MAX_DCA_LEVELS = 3
     CORRELATION_LIMIT = 0.7
     OPTIMIZE_EVERY_X_DAYS = 7
     INITIAL_PARAMS = {
@@ -26,7 +25,6 @@ class Config:
         'bb_stddev': 2.0,
         'dca_atr_multiplier': 0.5
     }
-
 
 # ================== SmartScalpingDCA Strategy ==================
 class SmartScalpingDCA(IStrategy):
@@ -40,10 +38,9 @@ class SmartScalpingDCA(IStrategy):
     process_only_new_candles = True
     startup_candle_count: int = 200
 
-    def _init_(self, config: dict) -> None:
-        super()._init_(config)
-        self.opt_params = Config.INITIAL_PARAMS.copy()
-        self.last_optimization: Optional[datetime] = None
+    # --- Custom attributes
+    opt_params = Config.INITIAL_PARAMS.copy()
+    last_optimization: Optional[datetime] = None
 
     def bot_start(self, **kwargs) -> None:
         """Runs at bot start"""
@@ -51,9 +48,13 @@ class SmartScalpingDCA(IStrategy):
 
     # ================== Indicators ==================
     def populate_indicators(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
-        bb = ta.BBANDS(df['close'], timeperiod=self.opt_params['bb_length'], nbdevup=self.opt_params['bb_stddev'], nbdevdn=self.opt_params['bb_stddev'])
-        df['bb_upper'], df['bb_middle'], df['bb_lower'] = bb['upperband'], bb['middleband'], bb['lowerband']
-
+        df['bb_upper'], df['bb_middle'], df['bb_lower'] = ta.BBANDS(
+            df['close'],
+            timeperiod=self.opt_params['bb_length'],
+            nbdevup=self.opt_params['bb_stddev'],
+            nbdevdn=self.opt_params['bb_stddev'],
+            matype=0
+        )
         df['ema50'] = ta.EMA(df['close'], timeperiod=50)
         df['ema200'] = ta.EMA(df['close'], timeperiod=200)
         df['rsi'] = ta.RSI(df['close'], timeperiod=14)
@@ -96,14 +97,14 @@ class SmartScalpingDCA(IStrategy):
 
         return df
 
-    # ================== Custom Stake Size (Risk based) ==================
+    # ================== Custom Stake Size ==================
     def custom_stake_amount(self, pair: str, current_time: datetime, current_rate: float,
                             proposed_stake: float, min_stake: float, max_stake: float,
                             leverage: float, entry_tag: Optional[str], side: str, **kwargs) -> float:
-        balance = self.wallets.get_total_balance()
+        return 10 
         max_risk = Config.RISK_PER_TRADE * balance
 
-        dca_level = int(entry_tag.split('')[-1]) if entry_tag and '' in entry_tag else 0
+        dca_level = int(entry_tag.split('_')[-1]) if entry_tag and '_' in entry_tag else 0
 
         df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         atr = df['atr'].iloc[-1]
@@ -120,13 +121,12 @@ class SmartScalpingDCA(IStrategy):
     def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
                         current_rate: float, current_profit: float, **kwargs) -> float:
         if trade.nr_of_successful_entries > 1:
-            return -0.015  # tighter after DCA
+            return -0.015
         return -0.03
 
     # ================== Confirm Entries ==================
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float,
                              rate: float, time_in_force: str, **kwargs) -> bool:
-        # Correlation Check
         for open_trade in Trade.get_open_trades():
             if open_trade.pair == pair:
                 continue
@@ -135,7 +135,6 @@ class SmartScalpingDCA(IStrategy):
                 logger.warning(f"⚠ Correlated {pair} with {open_trade.pair}: {corr:.2f}")
                 return False
 
-        # Volatility Check (no movement = no trade)
         df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         if df['close'].pct_change(288).iloc[-1] < 0.015:
             return False
@@ -150,9 +149,9 @@ class SmartScalpingDCA(IStrategy):
         logger.info("🚀 Optimizing Parameters...")
 
         bounds = [
-            (15, 25),  # bb_length
-            (1.5, 2.5), # bb_stddev
-            (0.3, 1.0)  # dca_atr_multiplier
+            (15, 25),
+            (1.5, 2.5),
+            (0.3, 1.0)
         ]
 
         def objective(params):
@@ -170,13 +169,14 @@ class SmartScalpingDCA(IStrategy):
 
         logger.info(f"✅ Optimization Complete: {self.opt_params}")
 
-    # ================== Simulate Profit (basic offline) ==================
+    # ================== Simulate Profit ==================
     def simulate_profit(self, bb_length: int, bb_stddev: float, dca_multiplier: float) -> float:
         df, _ = self.dp.get_analyzed_dataframe('BTC/USDT', self.timeframe)
         if df is None or df.empty:
             return 0
 
-        df['bb_upper'], df['bb_middle'], df['bb_lower'] = ta.BBANDS(df['close'], timeperiod=int(bb_length), nbdevup=bb_stddev, nbdevdn=bb_stddev).values()
+        bb = ta.BBANDS(df['close'], timeperiod=int(bb_length), nbdevup=bb_stddev, nbdevdn=bb_stddev)
+        df['bb_upper'], df['bb_middle'], df['bb_lower'] = bb['upperband'], bb['middleband'], bb['lowerband']
         df['rsi'] = ta.RSI(df['close'], timeperiod=14)
 
         entries = (df['close'] < df['bb_lower']) & (df['rsi'] < 30)
@@ -207,8 +207,3 @@ class SmartScalpingDCA(IStrategy):
             return 0
 
         return df1['close'].corr(df2['close'])
-
-
-# Add to SmartScalpingDCA.py
-if __name__ == '__main__':
-    print("Strategy module loaded")

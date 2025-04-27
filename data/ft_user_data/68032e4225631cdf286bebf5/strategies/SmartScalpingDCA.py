@@ -1,4 +1,4 @@
-# -- coding: utf-8 --
+# -*- coding: utf-8 -*-
 # SmartScalpingDCA.py
 
 import logging
@@ -12,8 +12,7 @@ from freqtrade.persistence import Trade
 from functools import reduce
 from scipy.optimize import minimize
 
-logger = logging.getLogger(_name_)
-
+logger = logging.getLogger(__name__)
 
 # ================== Settings ==================
 class Config:
@@ -27,7 +26,6 @@ class Config:
         'dca_atr_multiplier': 0.5
     }
 
-
 # ================== SmartScalpingDCA Strategy ==================
 class SmartScalpingDCA(IStrategy):
     # --- Base settings
@@ -40,8 +38,8 @@ class SmartScalpingDCA(IStrategy):
     process_only_new_candles = True
     startup_candle_count: int = 200
 
-    def _init_(self, config: dict) -> None:
-        super()._init_(config)
+    def __init__(self, config: dict) -> None:
+        super().__init__(config)
         self.opt_params = Config.INITIAL_PARAMS.copy()
         self.last_optimization: Optional[datetime] = None
 
@@ -51,14 +49,18 @@ class SmartScalpingDCA(IStrategy):
 
     # ================== Indicators ==================
     def populate_indicators(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
-        bb = ta.BBANDS(df['close'], timeperiod=self.opt_params['bb_length'], nbdevup=self.opt_params['bb_stddev'], nbdevdn=self.opt_params['bb_stddev'])
-        df['bb_upper'], df['bb_middle'], df['bb_lower'] = bb['upperband'], bb['middleband'], bb['lowerband']
+        bb = ta.BBANDS(df['close'], timeperiod=self.opt_params['bb_length'],
+                      nbdevup=self.opt_params['bb_stddev'],
+                      nbdevdn=self.opt_params['bb_stddev'])
+        df['bb_upper'] = bb['upperband']
+        df['bb_middle'] = bb['middleband']
+        df['bb_lower'] = bb['lowerband']
 
         df['ema50'] = ta.EMA(df['close'], timeperiod=50)
         df['ema200'] = ta.EMA(df['close'], timeperiod=200)
         df['rsi'] = ta.RSI(df['close'], timeperiod=14)
-        df['adx'] = ta.ADX(df, timeperiod=14)
-        df['atr'] = ta.ATR(df, timeperiod=14)
+        df['adx'] = ta.ADX(df['high'], df['low'], df['close'], timeperiod=14)
+        df['atr'] = ta.ATR(df['high'], df['low'], df['close'], timeperiod=14)
         df['volume_mean'] = ta.SMA(df['volume'], timeperiod=20)
 
         return df
@@ -67,14 +69,14 @@ class SmartScalpingDCA(IStrategy):
     def populate_entry_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         conditions = []
 
-        long = (
+        long_condition = (
             (df['close'] < df['bb_lower']) &
             (df['volume'] > df['volume_mean']) &
             (df['ema50'] > df['ema200']) &
             (df['rsi'] < 30) &
             (df['adx'] > 20)
         )
-        conditions.append(long)
+        conditions.append(long_condition)
 
         if conditions:
             df.loc[
@@ -86,24 +88,24 @@ class SmartScalpingDCA(IStrategy):
 
     # ================== Exits ==================
     def populate_exit_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
-        df['exit_long'] = 0
+        df.loc[:, 'enter_long'] = 0
 
         exit_condition = (
             (df['close'] > df['bb_upper']) |
             (df['rsi'] > 70)
         )
-        df.loc[exit_condition, 'exit_long'] = 1
+        df.loc[reduce(lambda x, y: x & y, exit_condition), 'enter_long'] = 1
 
         return df
 
     # ================== Custom Stake Size (Risk based) ==================
     def custom_stake_amount(self, pair: str, current_time: datetime, current_rate: float,
-                            proposed_stake: float, min_stake: float, max_stake: float,
-                            leverage: float, entry_tag: Optional[str], side: str, **kwargs) -> float:
+                          proposed_stake: float, min_stake: float, max_stake: float,
+                          leverage: float, entry_tag: Optional[str], side: str, **kwargs) -> float:
         balance = self.wallets.get_total_balance()
         max_risk = Config.RISK_PER_TRADE * balance
 
-        dca_level = int(entry_tag.split('')[-1]) if entry_tag and '' in entry_tag else 0
+        dca_level = int(entry_tag.split('_')[-1]) if entry_tag and '_' in entry_tag else 0
 
         df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         atr = df['atr'].iloc[-1]
@@ -118,14 +120,14 @@ class SmartScalpingDCA(IStrategy):
 
     # ================== Custom Stoploss ==================
     def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
-                        current_rate: float, current_profit: float, **kwargs) -> float:
+                      current_rate: float, current_profit: float, **kwargs) -> float:
         if trade.nr_of_successful_entries > 1:
             return -0.015  # tighter after DCA
         return -0.03
 
     # ================== Confirm Entries ==================
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float,
-                             rate: float, time_in_force: str, **kwargs) -> bool:
+                          rate: float, time_in_force: str, **kwargs) -> bool:
         # Correlation Check
         for open_trade in Trade.get_open_trades():
             if open_trade.pair == pair:
@@ -176,7 +178,10 @@ class SmartScalpingDCA(IStrategy):
         if df is None or df.empty:
             return 0
 
-        df['bb_upper'], df['bb_middle'], df['bb_lower'] = ta.BBANDS(df['close'], timeperiod=int(bb_length), nbdevup=bb_stddev, nbdevdn=bb_stddev).values()
+        df['bb_upper'], df['bb_middle'], df['bb_lower'] = ta.BBANDS(df['close'],
+                                                                   timeperiod=int(bb_length),
+                                                                   nbdevup=bb_stddev,
+                                                                   nbdevdn=bb_stddev).values()
         df['rsi'] = ta.RSI(df['close'], timeperiod=14)
 
         entries = (df['close'] < df['bb_lower']) & (df['rsi'] < 30)
@@ -208,7 +213,7 @@ class SmartScalpingDCA(IStrategy):
 
         return df1['close'].corr(df2['close'])
 
-
-# Add to SmartScalpingDCA.py
 if __name__ == '__main__':
-    print("Strategy module loaded")
+    # For testing purposes
+    strategy = SmartScalpingDCA({})
+    print("Strategy loaded successfully")

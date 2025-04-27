@@ -12,7 +12,7 @@ const logger = require("../utils/logger"); // Adjust path as needed
 // --- Configuration ---
 // !! IMPORTANT: Adjust these values based on YOUR Freqtrade setup !!
 const FREQTRADE_EXECUTABLE_PATH =
-  process.env.FREQTRADE_EXECUTABLE_PATH || "freqtrade"; // Or absolute path
+  process.env.FREQTRADE_EXECUTABLE_PATH || "./venu"; // Or absolute path
 const FREQTRADE_USER_DATA_DIR =
   process.env.FREQTRADE_USER_DATA_DIR || path.resolve("./freqtrade-user-data"); // Base user-data dir
 
@@ -566,18 +566,22 @@ async function startFreqtradeProcess(instanceId) {
   const pm2ErrLogPath = path.join(instanceUserDataPath, "pm2_err.log");
 
   const pm2Options = {
-    script: FREQTRADE_EXECUTABLE_PATH,
+    script: path.resolve("./venv/Scripts/python.exe"), // Use venv python
     name: processName,
-    args: freqtradeArgs,
+    args: [
+      "-m",
+      "freqtrade", // <- THIS is critical
+      "trade",
+      "--config",
+      configPaths.configFilePath,
+      "-vv",
+    ],
     exec_mode: "fork",
-    autorestart: false, // Managed by our logic (avoids rapid restart loops on error)
-    log_date_format: "YYYY-MM-DD HH:mm:ss Z", // Added seconds
-    // PM2 logs capture wrapper stdout/stderr (useful for crashes before freqtrade logs)
+    autorestart: false,
     out_file: pm2OutLogPath,
     error_file: pm2ErrLogPath,
-    merge_logs: false, // Keep PM2 logs separate (out vs err)
-    // cwd: instanceUserDataPath, // Optional: Set CWD if relative paths cause issues
-    // env: { ... }, // Optional: Set environment variables if needed by Freqtrade/Python
+    merge_logs: false,
+    log_date_format: "YYYY-MM-DD HH:mm:ss Z",
   };
 
   logger.info(

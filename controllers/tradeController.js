@@ -64,11 +64,8 @@ exports.getTrades = async (req, res) => {
     // --- Pagination Logic ---
     let page = parseInt(req.query.page, 10);
     let limit = parseInt(req.query.limit, 10);
-
-    // Validate and set defaults for pagination
-    page = page > 0 ? page : 1; // Default to page 1 if invalid
-    limit = limit > 0 && limit <= 100 ? limit : 20; // Default to 20, max 100 per page
-
+    page = page > 0 ? page : 1;
+    limit = limit > 0 && limit <= 100 ? limit : 20;
     const skip = (page - 1) * limit;
     logger.info({
       operation,
@@ -81,24 +78,89 @@ exports.getTrades = async (req, res) => {
     });
     // --- End Pagination Logic ---
 
-    // --- Database Queries (Parallel for efficiency) ---
-    const [trades, totalTrades] = await Promise.all([
-      // Query for the paginated trades
+    // --- Database Queries (Parallel) ---
+    // Fetch trades including necessary details for percentage calculation
+    const [tradesFromDB, totalTrades] = await Promise.all([
       Trade.find({ botInstanceId })
-        .sort({ createdAt: -1 }) // Sort by newest first
+        // Explicitly select fields within tradeDetails if needed, though .lean() usually gets all
+        // .select('+tradeDetails.entryPrice +tradeDetails.exitPrice +tradeDetails.side')
+        .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .lean(), // Use .lean() for potentially better performance on read-only data
-      // Query for the total count of trades matching the filter
+        .lean(), // Keep using .lean() for performance
       Trade.countDocuments({ botInstanceId }),
     ]);
     // --- End Database Queries ---
+
+    // --- Process Trades: Calculate Percentage and Format ---
+    const trades = tradesFromDB.map((trade) => {
+      let profitPercentage = 0; // Default to 0
+      const details = trade.tradeDetails || {}; // Handle cases where tradeDetails might be missing
+
+      // *** START DEBUG LOGGING ***
+      if (trade._id.toString() === "680cda20f8a7f092fa6ece16") {
+        console.log("--- DEBUGGING TRADE 680cda... ---");
+        console.log("Raw tradeDetails:", trade.tradeDetails);
+        console.log("Raw Status:", trade.status);
+        console.log("Extracted details.entryPrice:", details.entryPrice);
+        console.log("Extracted details.exitPrice:", details.exitPrice);
+        console.log("Extracted details.side:", details.side);
+        console.log("Extracted details.type:", details.type);
+        const sideForCalc =
+          details.side?.toLowerCase() || details.type?.toLowerCase();
+        console.log("Calculated side variable:", sideForCalc);
+        console.log("----------------------------------");
+      }
+      // *** END DEBUG LOGGING ***
+      // Calculate only for closed trades with valid entry price
+      if (
+        trade.status === "closed" &&
+        details.entryPrice &&
+        details.entryPrice !== 0
+      ) {
+        const entry = details.entryPrice;
+        // Use exitPrice if available, otherwise estimate based on profit (less accurate)
+        const exit =
+          details.exitPrice ?? entry + trade.profit / (details.amount || 1);
+
+        // Determine side consistently (check 'side' first, then maybe 'type')
+        const side = details.side?.toLowerCase() || details.type?.toLowerCase();
+
+        if (side === "long" || side === "buy") {
+          profitPercentage = ((exit - entry) / entry) * 100;
+        } else if (side === "short" || side === "sell") {
+          profitPercentage = ((entry - exit) / entry) * 100;
+        }
+        // *** Log intermediate percentage ***
+        if (trade._id.toString() === "680cda20f8a7f092fa6ece16") {
+          console.log("Intermediate calculated %:", profitPercentage);
+        }
+      }
+
+      // Map to the final desired structure for the frontend
+      return {
+        id: trade._id.toString(), // Mongo ID as string
+        pair: details.pair || "N/A", // Pair name
+        type:
+          details.side?.toLowerCase() === "long" ||
+          details.side?.toLowerCase() === "buy"
+            ? "BUY"
+            : "SELL", // Standardize to BUY/SELL
+        entryPrice: details.entryPrice ?? 0, // Entry price
+        exitPrice: details.exitPrice ?? 0, // Exit price (0 if open/missing)
+        profit: trade.profit ?? 0, // Profit amount
+        profitPercentage: parseFloat(profitPercentage.toFixed(2)), // Calculated percentage (2 decimal places)
+        status: trade.status, // Added status back in case UI needs it
+        timestamp: trade.createdAt.getTime(), // Creation time as epoch milliseconds
+      };
+    });
+    // --- End Process Trades ---
 
     const totalPages = Math.ceil(totalTrades / limit);
 
     logger.info({
       operation,
-      message: "Trades fetched successfully with pagination",
+      message: "Trades fetched and processed successfully with pagination",
       botInstanceId,
       userId,
       tradeCount: trades.length,
@@ -107,9 +169,9 @@ exports.getTrades = async (req, res) => {
       totalPages,
     });
 
-    // --- Send Response with Pagination Metadata ---
+    // --- Send Response ---
     res.json({
-      trades, // The array of trades for the current page
+      trades, // The array of processed trades
       pagination: {
         currentPage: page,
         limit: limit,
