@@ -19,9 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Stage 2: TA-Lib builder
 FROM system-base as talib-builder
 
-# Install specific automake version needed by TA-Lib
+# Install automake (no need for specific version 1.15)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    automake-1.15 \
+    automake \
     && rm -rf /var/lib/apt/lists/*
 
 # Compile TA-Lib with all known fixes
