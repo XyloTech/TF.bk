@@ -19,27 +19,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Stage 2: TA-Lib builder
 FROM system-base as talib-builder
 
-# Install required build tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    automake \
-    libtool \
-    && rm -rf /var/lib/apt/lists/*
-
-# Compile TA-Lib with all known fixes
 WORKDIR /tmp
-RUN git clone https://github.com/mrjbq7/ta-lib.git \
+RUN wget -q https://downloads.sourceforge.net/project/ta-lib/ta-lib/0.4.0/ta-lib-0.4.0-src.tar.gz \
+    && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib \
-    && git checkout 0.4.0 \
     && ./configure --prefix=/usr/local \
-    # Apply all known fixes
+    # Apply critical fixes
     && sed -i 's/TA_Real\* close/TA_Real \*close/' src/ta_func/ta_utility.h \
-    # First build without parallel compilation to avoid race conditions
-    && make -j1 \
-    # Then rebuild with parallel compilation for faster builds
-    && make clean \
-    && make -j$(nproc) \
+    && sed -i 's/__attribute__((unused))//' src/ta_common/ta_global.c \
+    # Build with limited parallelism to avoid race conditions
+    && make -j2 \
     && make install \
-    && rm -rf /tmp/ta-lib
+    && rm -rf /tmp/ta-lib*
 
 # Stage 3: Node.js builder
 FROM system-base as node-builder
