@@ -17,7 +17,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Stage 2: TA-Lib builder
-# Stage 2: TA-Lib builder
 FROM system-base as talib-builder
 
 # Install required build tools
@@ -26,14 +25,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtool \
     && rm -rf /var/lib/apt/lists/*
 
-# Compile TA-Lib with all known fixes
+# Compile TA-Lib with fixes for modern systems
 WORKDIR /tmp
 RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
-    && cd ta-lib/ \
-    && sed -i.bak 's/AM_PROG_CC_STDC/AC_PROG_CC/g' configure.ac \
-    && autoreconf -i \
+    && cd ta-lib \
     && ./configure --prefix=/usr/local \
+    # Apply necessary fixes for the gen_code tool compilation
+    && sed -i 's/TA_Real\* close/TA_Real \*close/' src/ta_func/ta_utility.h \
     && make -j$(nproc) \
     && make install \
     && rm -rf /tmp/ta-lib*
