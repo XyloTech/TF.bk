@@ -5,7 +5,7 @@ const Bot = require("../models/Bot"); // Assuming Bot model is needed for purcha
 const {
   startFreqtradeProcess,
   stopFreqtradeProcess,
-} = require("../services/freqtradeManager"); // Adjust path if needed
+} = require("../services/freqtrade"); // Adjust path if needed
 // Note: Decrypt is handled by the manager, not directly needed here usually
 const logger = require("../utils/logger");
 // 🔹 Purchase Bot

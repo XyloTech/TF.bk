@@ -41,9 +41,9 @@
     }
   ],
   "dry_run": true,
-  "user_data_dir": "C:/Users/Mahesh's PC/Desktop/Bot-Boom/Example folder/crypto-bot/data/ft_user_data/68032e4225631cdf286bebf5",
-  "db_url": "postgresql+psycopg2://botmoon:OnqgqNDWrOc515EUH0kJvAMoaKUagLhZ@dpg-d05n59qli9vc738vpa7g-a.singapore-postgres.render.com:5432/botmoon",
-  "logfile": "freqtrade_68032e4225631cdf286bebf5.log",
+  "strategy": "SmartScalpingDCA",
   "bot_name": "ft_68032e4225631cdf286bebf5",
-  "strategy": "SmartScalpingDCA"
+  "logfile": "freqtrade_68032e4225631cdf286bebf5.log",
+  "db_url": "postgresql+psycopg2://botmoon:OnqgqNDWrOc515EUH0kJvAMoaKUagLhZ@dpg-d05n59qli9vc738vpa7g-a.singapore-postgres.render.com:5432/botmoon",
+  "user_data_dir": "C:\\Users\\Mahesh's PC\\Desktop\\Bot-Boom\\Example folder\\crypto-bot\\data\\ft_user_data\\68032e4225631cdf286bebf5"
 }

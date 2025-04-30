@@ -42,7 +42,7 @@ const connectPm2 = () => {
           )
         );
       }
-      logger.info("✅ PM2 connected"); // Use logger
+      logger.info(" PM2 connected"); // Use logger
       isPm2Connected = true;
       resolve();
     });

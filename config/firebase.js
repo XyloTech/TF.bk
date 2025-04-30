@@ -18,6 +18,6 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-logger.info("✅ Firebase Admin SDK initialized successfully.");
+logger.info(" Firebase Admin SDK initialized successfully.");
 
 module.exports = admin;

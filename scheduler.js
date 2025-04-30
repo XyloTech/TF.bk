@@ -2,7 +2,7 @@
 const cron = require("node-cron");
 const BotInstance = require("./models/BotInstance"); // Adjust path
 const User = require("./models/User"); // Adjust path
-const { stopFreqtradeProcess } = require("./services/freqtradeManager"); // Adjust path
+const { stopFreqtradeProcess } = require("./services/freqtrade"); // Adjust path
 const { sendNotification } = require("./socket"); // Adjust path for WebSocket notifications
 
 let scheduledTask = null;
@@ -22,7 +22,7 @@ const checkExpiredDemos = async () => {
       .populate({ path: "userId", select: "_id email telegramId" }); // Get user info for notification
 
     if (expiredDemos.length === 0) {
-      console.log("✅ [Scheduler] No expired demo instances found.");
+      console.log(" [Scheduler] No expired demo instances found.");
       return;
     }
 
@@ -81,7 +81,7 @@ const initScheduler = () => {
   }
   // Schedule to run every hour (at minute 0). Adjust as needed.
   console.log(
-    "🚀 [Scheduler] Initializing expired demo checker (runs hourly)..."
+    " [Scheduler] Initializing expired demo checker (runs hourly)..."
   );
   scheduledTask = cron.schedule("0 * * * *", checkExpiredDemos, {
     // Runs at 0 minutes past the hour
@@ -93,7 +93,7 @@ const initScheduler = () => {
   console.log("[Scheduler] Running initial check shortly...");
   setTimeout(checkExpiredDemos, 15 * 1000); // Run 15 seconds after server starts
 
-  console.log("✅ [Scheduler] Initialized.");
+  console.log(" [Scheduler] Initialized.");
 };
 
 const stopScheduler = () => {
@@ -101,7 +101,7 @@ const stopScheduler = () => {
     console.log("⏹️ [Scheduler] Stopping...");
     scheduledTask.stop();
     scheduledTask = null;
-    console.log("✅ [Scheduler] Stopped.");
+    console.log(" [Scheduler] Stopped.");
   }
 };
 

@@ -14,7 +14,7 @@ const securityHeaders = require("./middleware/securityHeaders");
 
 // --- Services & Utils ---
 const { setupSocket } = require("./socket");
-const { connectPm2, disconnectPm2 } = require("./services/freqtradeManager");
+const { connectPm2, disconnectPm2 } = require("./services/freqtrade");
 const { initScheduler, stopScheduler } = require("./scheduler");
 
 const app = express();
@@ -77,14 +77,14 @@ async function startServer() {
   try {
     // 1. Connect to MongoDB
     await mongoose.connect(config.mongodb.uri, config.mongodb.options);
-    console.log("✅ MongoDB connected");
+    console.log(" MongoDB connected");
 
     // 2. Connect to PM2
     await connectPm2();
 
     // 3. Setup WebSocket Server
     setupSocket(server);
-    console.log("✅ WebSocket server initialized");
+    console.log(" WebSocket server initialized");
 
     // 4. Initialize Scheduler
     initScheduler();
@@ -92,7 +92,7 @@ async function startServer() {
     // 5. Start HTTP Server
     const PORT = config.port;
     server.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT} (${config.env} mode)`);
+      console.log(` Server running on port ${PORT} (${config.env} mode)`);
       console.log(`🟢 Application ready!`);
     });
   } catch (error) {

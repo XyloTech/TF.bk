@@ -13,7 +13,7 @@ exports.sendBotSuccessEmail = async (to, botId) => {
   const mailOptions = {
     from: `"CryptoBot Pro" <${process.env.SMTP_USER}>`,
     to,
-    subject: "Your Trading Bot is Ready ✅",
+    subject: "Your Trading Bot is Ready ",
     html: `
       <h2>🎉 Payment Received</h2>
       <p>Thank you for purchasing the <strong>${botId}</strong> bot.</p>

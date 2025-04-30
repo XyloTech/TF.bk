@@ -376,7 +376,7 @@ exports.nowPaymentsWebhook = async (req, res) => {
           try {
             await sendTelegramMessage(
               user.telegramId,
-              `🚀 Payment confirmed! Your *${userFriendlyBotName}* bot subscription is active until ${expiryDateString}.\n\n➡️ *NEXT STEP:* Please add your exchange API keys in the dashboard to start trading: ${FRONTEND_URL}/dashboard`
+              ` Payment confirmed! Your *${userFriendlyBotName}* bot subscription is active until ${expiryDateString}.\n\n➡️ *NEXT STEP:* Please add your exchange API keys in the dashboard to start trading: ${FRONTEND_URL}/dashboard`
             );
           } catch (e) {
             console.error("Telegram Error:", e);

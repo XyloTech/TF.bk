@@ -179,9 +179,7 @@ const setupSocket = (server) => {
     });
   });
 
-  logger.info(
-    "✅ Socket.IO Server Initialized with Authentication Middleware."
-  );
+  logger.info(" Socket.IO Server Initialized with Authentication Middleware.");
 };
 
 // 🔹 Emit events from anywhere in the app to a specific user's room

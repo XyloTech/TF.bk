@@ -147,7 +147,7 @@ class SmartScalpingDCA(IStrategy):
         if self.last_optimization and (datetime.now() - self.last_optimization).days < Config.OPTIMIZE_EVERY_X_DAYS:
             return
 
-        logger.info("🚀 Optimizing Parameters...")
+        logger.info(" Optimizing Parameters...")
 
         bounds = [
             (15, 25),  # bb_length
@@ -168,7 +168,7 @@ class SmartScalpingDCA(IStrategy):
         }
         self.last_optimization = datetime.now()
 
-        logger.info(f"✅ Optimization Complete: {self.opt_params}")
+        logger.info(f" Optimization Complete: {self.opt_params}")
 
     # ================== Simulate Profit (basic offline) ==================
     def simulate_profit(self, bb_length: int, bb_stddev: float, dca_multiplier: float) -> float:

@@ -1,219 +1,182 @@
 # -*- coding: utf-8 -*-
-# SmartScalpingDCA.py
-
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Dict, List, Optional
 import pandas as pd
-import numpy as np
 import talib.abstract as ta
-from freqtrade.strategy import IStrategy
+from freqtrade.strategy import IStrategy, DecimalParameter, IntParameter
 from freqtrade.persistence import Trade
-from functools import reduce
-from scipy.optimize import minimize
 
 logger = logging.getLogger(__name__)
 
-# ================== Settings ==================
-class Config:
-    RISK_PER_TRADE = 0.02  # 2% risk
-    MAX_DCA_LEVELS = 3     # How many DCA orders allowed
-    CORRELATION_LIMIT = 0.7
-    OPTIMIZE_EVERY_X_DAYS = 7
-    INITIAL_PARAMS = {
-        'bb_length': 20,
-        'bb_stddev': 2.0,
-        'dca_atr_multiplier': 0.5
-    }
-
-# ================== SmartScalpingDCA Strategy ==================
 class SmartScalpingDCA(IStrategy):
-    # --- Base settings
-    timeframe = '5m'
-    minimal_roi = {"0": 0.01}
-    stoploss = -0.03
-    trailing_stop = True
-    trailing_stop_positive = 0.004
+    # Strategy configuration
+    timeframe = '15m'
+    can_short = False
+    
+    # ROI configuration
+    minimal_roi = {
+        "0": 0.03,  # 3% profit target
+        "30": 0.02,  # After 30 minutes, 2%
+        "60": 0.01,  # After 60 minutes, 1%
+        "120": 0  # After 120 minutes, 0% (let custom exit handle)
+    }
+    
+    # Stoploss configuration
+    stoploss = -0.50  # Hard stoploss (50%)
     use_custom_stoploss = True
-    process_only_new_candles = True
-    startup_candle_count: int = 200
+    
+    # Trailing stop
+    trailing_stop = True
+    trailing_stop_positive = 0.01
+    trailing_stop_positive_offset = 0.02
+    trailing_only_offset_is_reached = True
+    
+    # Order types
+    order_types = {
+        'entry': 'limit',
+        'exit': 'limit',
+        'stoploss': 'market',
+        'stoploss_on_exchange': True
+    }
+    
+    # DCA configuration
+    position_adjustment_enable = True
+    max_entry_position_adjustment = 3  # Maximum 3 additional entries
+    
+    # Risk management
+    risk_per_trade = 0.015  # 1.5% per trade
+    dca_multiplier = 1.6
+    
+    # Protections
+    protections = [
+        {
+            "method": "CooldownPeriod",
+            "stop_duration_candles": 5
+        }
+    ]
+
+    # Hyperoptable parameters
+    buy_rsi = IntParameter(20, 40, default=35, space='buy')
+    sell_rsi = IntParameter(60, 80, default=65, space='sell')
+    atr_multiplier = DecimalParameter(0.5, 3.0, default=1.2, space='buy')
 
     def __init__(self, config: dict) -> None:
         super().__init__(config)
-        self.opt_params = Config.INITIAL_PARAMS.copy()
-        self.last_optimization: Optional[datetime] = None
+        self.safety_orders_active = {}
 
-    def bot_start(self, **kwargs) -> None:
-        """Runs at bot start"""
-        self.optimize_parameters()
-
-    # ================== Indicators ==================
     def populate_indicators(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
-        bb = ta.BBANDS(df['close'], timeperiod=self.opt_params['bb_length'],
-                      nbdevup=self.opt_params['bb_stddev'],
-                      nbdevdn=self.opt_params['bb_stddev'])
-        df['bb_upper'] = bb['upperband']
-        df['bb_middle'] = bb['middleband']
-        df['bb_lower'] = bb['lowerband']
-
-        df['ema50'] = ta.EMA(df['close'], timeperiod=50)
-        df['ema200'] = ta.EMA(df['close'], timeperiod=200)
-        df['rsi'] = ta.RSI(df['close'], timeperiod=14)
-        df['adx'] = ta.ADX(df['high'], df['low'], df['close'], timeperiod=14)
-        df['atr'] = ta.ATR(df['high'], df['low'], df['close'], timeperiod=14)
-        df['volume_mean'] = ta.SMA(df['volume'], timeperiod=20)
-
+        # EMA Indicators
+        df['ema20'] = ta.EMA(df, timeperiod=20)
+        df['ema50'] = ta.EMA(df, timeperiod=50)
+        
+        # Momentum Indicators
+        df['rsi'] = ta.RSI(df, timeperiod=14)
+        
+        # Volatility Indicators
+        df['atr'] = ta.ATR(df, timeperiod=14)
+        
+        # Volume Indicators
+        df['volume_ma'] = ta.SMA(df, timeperiod=20, price='volume')
+        
         return df
 
-    # ================== Entries ==================
     def populate_entry_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
-        conditions = []
+        # Long entry conditions
+        df.loc[
+            (
+                (df['ema20'] > df['ema50']) &
+                (df['rsi'] < self.buy_rsi.value) &
+                (df['close'] < df['ema20']) &
+                (df['volume'] > df['volume_ma'])
+            ),
+            'enter_long'] = 1
 
-        long_condition = (
-            (df['close'] < df['bb_lower']) &
-            (df['volume'] > df['volume_mean']) &
-            (df['ema50'] > df['ema200']) &
-            (df['rsi'] < 30) &
-            (df['adx'] > 20)
-        )
-        conditions.append(long_condition)
-
-        if conditions:
-            df.loc[
-                reduce(lambda x, y: x | y, conditions),
-                'enter_long'
-            ] = 1
-
-        return df
-
-    # ================== Exits ==================
-    def populate_exit_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
-        df.loc[:, 'enter_long'] = 0
-
-        exit_condition = (
-            (df['close'] > df['bb_upper']) |
-            (df['rsi'] > 70)
-        )
-        df.loc[reduce(lambda x, y: x & y, exit_condition), 'enter_long'] = 1
+        # Short entry conditions
+        df.loc[
+            (
+                (df['ema20'] < df['ema50']) &
+                (df['rsi'] > self.sell_rsi.value) &
+                (df['close'] > df['ema20']) &
+                (df['volume'] > df['volume_ma'])
+            ),
+            'enter_short'] = 1
 
         return df
 
-    # ================== Custom Stake Size (Risk based) ==================
-    def custom_stake_amount(self, pair: str, current_time: datetime, current_rate: float,
-                          proposed_stake: float, min_stake: float, max_stake: float,
-                          leverage: float, entry_tag: Optional[str], side: str, **kwargs) -> float:
-        balance = self.wallets.get_total_balance()
-        max_risk = Config.RISK_PER_TRADE * balance
-
-        dca_level = int(entry_tag.split('_')[-1]) if entry_tag and '_' in entry_tag else 0
-
-        df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
-        atr = df['atr'].iloc[-1]
-        dca_distance = atr * self.opt_params['dca_atr_multiplier']
-
-        if dca_level == 0:
-            stake = max_risk / leverage
-        else:
-            stake = (max_risk * (1.5 ** (dca_level - 1))) / leverage
-
-        return min(stake, max_stake)
-
-    # ================== Custom Stoploss ==================
-    def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
-                      current_rate: float, current_profit: float, **kwargs) -> float:
-        if trade.nr_of_successful_entries > 1:
-            return -0.015  # tighter after DCA
-        return -0.03
-
-    # ================== Confirm Entries ==================
     def confirm_trade_entry(self, pair: str, order_type: str, amount: float,
-                          rate: float, time_in_force: str, **kwargs) -> bool:
-        # Correlation Check
-        for open_trade in Trade.get_open_trades():
-            if open_trade.pair == pair:
-                continue
-            corr = self.calculate_correlation(pair, open_trade.pair)
-            if corr > Config.CORRELATION_LIMIT:
-                logger.warning(f"⚠ Correlated {pair} with {open_trade.pair}: {corr:.2f}")
-                return False
-
-        # Volatility Check (no movement = no trade)
-        df, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
-        if df['close'].pct_change(288).iloc[-1] < 0.015:
+                          rate: float, time_in_force: str, side: str, **kwargs) -> bool:
+        # Prevent new entries when DCA is active
+        if self.safety_orders_active.get(pair, 0) > 0:
             return False
-
         return True
 
-    # ================== Optimization ==================
-    def optimize_parameters(self) -> None:
-        if self.last_optimization and (datetime.now() - self.last_optimization).days < Config.OPTIMIZE_EVERY_X_DAYS:
-            return
+    def adjust_trade_position(self, trade: Trade, current_time: datetime,
+                            current_rate: float, current_profit: float,
+                            min_stake: float, max_stake: float, **kwargs) -> Optional[float]:
+        pair = trade.pair
+        dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        
+        # Get current ATR value
+        current_atr = dataframe['atr'].iloc[-1]
+        dca_trigger = current_atr * self.atr_multiplier.value
+        
+        # Calculate price movement from entry
+        if trade.is_short:
+            price_movement = current_rate - trade.open_rate
+        else:
+            price_movement = trade.open_rate - current_rate
+        
+        # Check if we should DCA
+        dca_level = self.safety_orders_active.get(pair, 0)
+        if price_movement >= dca_trigger * (dca_level + 1):
+            # Calculate new stake amount
+            balance = self.wallets.get_total_balance()
+            stake_amount = (self.risk_per_trade * balance * (self.dca_multiplier ** (dca_level + 1))) / trade.leverage
+            
+            # Update DCA level
+            self.safety_orders_active[pair] = dca_level + 1
+            
+            return min(stake_amount, max_stake)
+        
+        return None
 
-        logger.info("🚀 Optimizing Parameters...")
+    def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
+                       current_rate: float, current_profit: float, **kwargs) -> float:
+        # Dynamic stoploss based on DCA level
+        dca_level = self.safety_orders_active.get(pair, 0)
+        
+        # Gradually tighten stoploss as we add positions
+        if dca_level == 1:
+            return -0.30  # 30% after first DCA
+        elif dca_level >= 2:
+            return -0.20  # 20% after second DCA
+        
+        return self.stoploss
 
-        bounds = [
-            (15, 25),  # bb_length
-            (1.5, 2.5), # bb_stddev
-            (0.3, 1.0)  # dca_atr_multiplier
-        ]
+    def custom_exit(self, pair: str, trade: Trade, current_time: datetime,
+                   current_rate: float, current_profit: float, **kwargs) -> Optional[str]:
+        # Early exit if we hit our profit target
+        if current_profit >= 0.03:  # 3% target
+            return 'take_profit'
+            
+        # Exit if RSI goes against our position
+        dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        last_rsi = dataframe['rsi'].iloc[-1]
+        
+        if trade.is_short and last_rsi < 30:
+            return 'rsi_exit_short'
+        elif not trade.is_short and last_rsi > 70:
+            return 'rsi_exit_long'
+            
+        return None
 
-        def objective(params):
-            bb_length, bb_stddev, dca_multiplier = params
-            return -self.simulate_profit(bb_length, bb_stddev, dca_multiplier)
+    def populate_exit_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
+        return df
 
-        result = minimize(objective, [20, 2.0, 0.5], bounds=bounds, method='L-BFGS-B')
-
-        self.opt_params = {
-            'bb_length': int(result.x[0]),
-            'bb_stddev': round(result.x[1], 2),
-            'dca_atr_multiplier': round(result.x[2], 2)
-        }
-        self.last_optimization = datetime.now()
-
-        logger.info(f"✅ Optimization Complete: {self.opt_params}")
-
-    # ================== Simulate Profit (basic offline) ==================
-    def simulate_profit(self, bb_length: int, bb_stddev: float, dca_multiplier: float) -> float:
-        df, _ = self.dp.get_analyzed_dataframe('BTC/USDT', self.timeframe)
-        if df is None or df.empty:
-            return 0
-
-        df['bb_upper'], df['bb_middle'], df['bb_lower'] = ta.BBANDS(df['close'],
-                                                                   timeperiod=int(bb_length),
-                                                                   nbdevup=bb_stddev,
-                                                                   nbdevdn=bb_stddev).values()
-        df['rsi'] = ta.RSI(df['close'], timeperiod=14)
-
-        entries = (df['close'] < df['bb_lower']) & (df['rsi'] < 30)
-        exits = (df['close'] > df['bb_upper']) | (df['rsi'] > 70)
-
-        returns = []
-        in_position = False
-        entry_price = 0
-
-        for idx in range(len(df)):
-            if not in_position and entries.iloc[idx]:
-                entry_price = df['close'].iloc[idx]
-                in_position = True
-            elif in_position and exits.iloc[idx]:
-                profit = (df['close'].iloc[idx] - entry_price) / entry_price
-                returns.append(profit)
-                in_position = False
-
-        total_profit = sum(returns)
-        return total_profit
-
-    # ================== Correlation Calculation ==================
-    def calculate_correlation(self, pair1: str, pair2: str) -> float:
-        df1, _ = self.dp.get_analyzed_dataframe(pair1, self.timeframe)
-        df2, _ = self.dp.get_analyzed_dataframe(pair2, self.timeframe)
-
-        if df1 is None or df2 is None or len(df1) != len(df2):
-            return 0
-
-        return df1['close'].corr(df2['close'])
-
-if __name__ == '__main__':
-    # For testing purposes
-    strategy = SmartScalpingDCA({})
-    print("Strategy loaded successfully")
+    def leverage(self, pair: str, current_time: datetime, current_rate: float,
+                proposed_leverage: float, max_leverage: float, side: str,
+                **kwargs) -> float:
+        # Limit leverage based on DCA level
+        dca_level = self.safety_orders_active.get(pair, 0)
+        return min(3.0, max_leverage) / (dca_level + 1)

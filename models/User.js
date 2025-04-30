@@ -27,7 +27,7 @@ const UserSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// ✅ Auto-remove sensitive fields from JSON responses
+//  Auto-remove sensitive fields from JSON responses
 UserSchema.set("toJSON", {
   transform: function (doc, ret) {
     delete ret.__v;
