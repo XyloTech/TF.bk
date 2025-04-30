@@ -24,11 +24,12 @@ RUN wget -q https://downloads.sourceforge.net/project/ta-lib/ta-lib/0.4.0/ta-lib
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib \
     && ./configure --prefix=/usr/local \
-    # Apply critical fixes
+    # Apply all known fixes for modern compilers
     && sed -i 's/TA_Real\* close/TA_Real \*close/' src/ta_func/ta_utility.h \
     && sed -i 's/__attribute__((unused))//' src/ta_common/ta_global.c \
-    # Build with limited parallelism to avoid race conditions
-    && make -j2 \
+    && sed -i 's/TA_LIB_API //' src/ta_abstract/frames/ta_frame.h \
+    # Disable parallel builds to avoid race conditions
+    && make -j1 \
     && make install \
     && rm -rf /tmp/ta-lib*
 
