@@ -69,6 +69,7 @@ app.use("/api/payments", require("./routes/paymentRoutes"));
 app.use("/api/logs", require("./routes/logRoutes"));
 app.use("/api/webhooks", require("./routes/webhookRoutes")); // <<< ADD THIS LINE
 app.use("/api/charts", require("./routes/chartRoutes"));
+app.use("/api/stats", require("./routes/statsRoutes"));
 // --- Global Error Handler (Must be last) ---
 app.use(errorHandler);
 

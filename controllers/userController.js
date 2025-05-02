@@ -1,96 +1,252 @@
-// controllers/userController.js
-const User = require("../models/User"); // Assuming your User model path is correct
+const User = require("../models/User");
+const Referral = require("../models/Referral"); // Import Referral model
+const logger = require("../utils/logger"); // Assuming logger exists
 
 // 🔹 Get User Profile
-// Fetches the profile for the currently authenticated user (populated by auth middleware)
 exports.getProfile = async (req, res) => {
-  // req.userDB is the authenticated user document.
-  // Sensitive fields should already be removed by the User model's 'toJSON' transform.
   if (!req.userDB) {
-    // This case might indicate an issue with the auth middleware
     return res
       .status(401)
       .json({ message: "Authentication error: User not found." });
   }
+  // userDB is transformed by toJSON in the model
   res.json(req.userDB);
 };
 
-// 🔹 Update User Profile (Non-sensitive fields like Full Name, Telegram ID)
-// Renamed from updateApiKeys, and removed API key logic.
+// 🔹 Update User Profile (Non-sensitive fields)
 exports.updateProfile = async (req, res) => {
+  // ... (keep existing updateProfile logic as provided previously) ...
+  // Ensure you don't allow updating referralCode, referralLink, accountBalance etc here
   try {
-    // Only allow updating specific, non-sensitive fields from the request body
-    const { fullName, telegramId } = req.body;
-    const userId = req.userDB._id; // Get user ID from authenticated user object
+    const { fullName, telegramId /* Add other updatable fields */ } = req.body;
+    const userId = req.userDB._id;
 
     const updates = {};
+    if (typeof fullName === "string") updates.fullName = fullName.trim();
+    if (typeof telegramId === "string") updates.telegramId = telegramId.trim();
 
-    // Build the updates object, trimming string inputs
-    if (typeof fullName === "string") {
-      updates.fullName = fullName.trim();
-    }
-    if (typeof telegramId === "string") {
-      // You might add validation for Telegram ID format if needed
-      updates.telegramId = telegramId.trim();
-    }
-    // Add other fields here that are safe to update via this endpoint
-    // e.g., notification preferences, etc.
-
-    // Check if there are any fields to update
     if (Object.keys(updates).length === 0) {
       return res
         .status(400)
         .json({ message: "No valid fields provided for update." });
     }
 
-    // Find the user by their ID and update only the specified fields using $set
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $set: updates },
-      {
-        new: true, // Return the updated document
-        runValidators: true, // Ensure model validations are checked
-        context: "query", // Important for some validators
-      }
+      { new: true, runValidators: true, context: "query" }
     );
 
-    if (!updatedUser) {
-      // Should not happen if auth middleware worked, but good practice to check
+    if (!updatedUser)
       return res.status(404).json({ message: "User not found." });
-    }
 
-    // updatedUser will have sensitive fields removed by 'toJSON'
-    res.json({
-      message: "Profile updated successfully",
-      user: updatedUser,
-    });
+    res.json({ message: "Profile updated successfully", user: updatedUser });
   } catch (error) {
-    console.error("Error updating user profile:", error);
-    // Handle specific Mongoose validation errors
+    logger.error({
+      operation: "updateProfile",
+      userId: req.userDB?._id,
+      error: error.message,
+      stack: error.stack,
+    });
     if (error.name === "ValidationError") {
       return res
         .status(400)
         .json({ message: "Validation failed", errors: error.errors });
     }
-    // Handle other potential errors
     res
       .status(500)
       .json({ message: "Failed to update profile due to a server error." });
   }
 };
 
-// 🔹 Get All Users (Admin Only)
-// Ensure you have middleware (e.g., isAdmin) protecting this route
-exports.getUsers = async (req, res) => {
-  try {
-    // Consider adding pagination for large user bases: .limit(X).skip(Y)
-    // Consider selecting only necessary fields: .select('fullName email role status createdAt')
-    const users = await User.find({}).sort({ createdAt: -1 }); // Example: sort by newest first
+// 🔹 NEW: Complete Registration / Track Referral
+// This endpoint should be called by the frontend once after the user's first login/auth,
+// passing the referral code if one was present in the signup URL.
+exports.completeRegistration = async (req, res) => {
+  const operation = "completeRegistration";
+  const userId = req.userDB._id;
+  const userEmail = req.userDB.email;
+  const { referralCode } = req.body; // Frontend needs to send this if available { "referralCode": "ABC123XYZ" }
 
-    // Users automatically transformed by toJSON
+  try {
+    const user = req.userDB; // User already fetched by auth middleware
+
+    // Idempotency: Check if registration already completed
+    if (user.registrationComplete) {
+      logger.info({
+        operation,
+        userId,
+        message: "Registration already completed.",
+      });
+      return res
+        .status(200)
+        .json({ message: "Registration already completed.", user });
+    }
+
+    let referrerUser = null;
+    if (
+      referralCode &&
+      typeof referralCode === "string" &&
+      referralCode.trim() !== ""
+    ) {
+      const cleanReferralCode = referralCode.trim();
+      logger.info({
+        operation,
+        userId,
+        message: `Attempting to find referrer with code: ${cleanReferralCode}`,
+      });
+
+      referrerUser = await User.findOne({ referralCode: cleanReferralCode });
+
+      if (referrerUser) {
+        // Prevent self-referral
+        if (referrerUser._id.toString() === userId.toString()) {
+          logger.warn({
+            operation,
+            userId,
+            message: "Self-referral attempt detected.",
+          });
+          referrerUser = null; // Nullify referrer if self-referral
+        } else {
+          logger.info({
+            operation,
+            userId,
+            message: `Referrer found: ${referrerUser._id} (${referrerUser.email})`,
+          });
+          // --- Create Referral Record ---
+          const existingReferral = await Referral.findOne({
+            referredId: userId,
+          }); // Check if already referred
+          if (!existingReferral) {
+            const newReferral = new Referral({
+              referrerId: referrerUser._id,
+              referredId: userId,
+              purchaseMade: false, // Default
+              commissionEarned: 0, // Default
+            });
+            await newReferral.save();
+            logger.info({
+              operation,
+              userId,
+              message: `Referral record created successfully. Referrer: ${referrerUser._id}, Referred: ${userId}`,
+            });
+
+            // Optional: Notify referrer via Socket.IO
+            // const { sendNotification } = require('../socket'); // Adjust path
+            // sendNotification(referrerUser._id.toString(), 'new_referral', `Someone signed up using your link! (${userEmail})`);
+          } else {
+            logger.warn({
+              operation,
+              userId,
+              message: `User already has a referral record (Ref ID: ${existingReferral._id}). Skipping creation.`,
+            });
+          }
+          // --- End Create Referral Record ---
+        }
+      } else {
+        logger.warn({
+          operation,
+          userId,
+          message: `Referral code '${cleanReferralCode}' provided but no matching user found.`,
+        });
+      }
+    } else {
+      logger.info({
+        operation,
+        userId,
+        message: "No referral code provided during registration completion.",
+      });
+    }
+
+    // Mark registration as complete for the new user
+    user.registrationComplete = true;
+    await user.save();
+
+    logger.info({
+      operation,
+      userId,
+      message: "User registration marked as complete.",
+    });
+
+    res
+      .status(200)
+      .json({ message: "Registration completed successfully.", user });
+  } catch (error) {
+    logger.error({
+      operation,
+      userId,
+      error: error.message,
+      stack: error.stack,
+    });
+    res
+      .status(500)
+      .json({ message: "An error occurred during registration completion." });
+  }
+};
+
+// 🔹 NEW: Get User's Own Referral Info
+exports.getMyReferralInfo = async (req, res) => {
+  const operation = "getMyReferralInfo";
+  const userId = req.userDB._id;
+  try {
+    // Fetch fresh user data in case link/code changed (though unlikely without specific action)
+    const user = await User.findById(userId).select(
+      "referralCode referralLink"
+    );
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Optionally fetch aggregate stats
+    const referralStats = await Referral.aggregate([
+      { $match: { referrerId: userId } }, // Match referrals made BY this user
+      {
+        $group: {
+          _id: null, // Group all referrals for this user
+          totalReferrals: { $sum: 1 },
+          successfulReferrals: { $sum: { $cond: ["$purchaseMade", 1, 0] } }, // Count referrals where purchase was made
+          totalCommission: { $sum: "$commissionEarned" },
+        },
+      },
+    ]);
+
+    res.json({
+      success: true,
+      referralCode: user.referralCode,
+      referralLink: user.referralLink,
+      stats: referralStats[0] || {
+        totalReferrals: 0,
+        successfulReferrals: 0,
+        totalCommission: 0,
+      }, // Provide defaults if no stats
+    });
+  } catch (error) {
+    logger.error({
+      operation,
+      userId,
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({ message: "Failed to retrieve referral info" });
+  }
+};
+
+// 🔹 Get All Users (Admin Only) - Ensure route is protected
+exports.getUsers = async (req, res) => {
+  // ... (keep existing getUsers logic) ...
+  try {
+    const users = await User.find({})
+      .select(
+        "fullName email role status createdAt registrationComplete referralCode"
+      ) // Select fields
+      .sort({ createdAt: -1 });
     res.json({ success: true, users });
   } catch (error) {
-    console.error("Error fetching users (admin):", error);
+    logger.error({
+      operation: "getUsersAdmin",
+      error: error.message,
+      stack: error.stack,
+    });
     res.status(500).json({ message: "Failed to retrieve users." });
   }
 };

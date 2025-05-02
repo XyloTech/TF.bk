@@ -15,6 +15,7 @@ const UserSchema = new mongoose.Schema(
     },
     role: { type: String, enum: ["user", "admin"], default: "user" },
     telegramId: { type: String, default: "" },
+    referralCode: { type: String, unique: true, sparse: true, index: true },
     referralLink: { type: String, default: "" },
     accountBalance: { type: Number, default: 0.0 },
     minimumBalance: { type: Number, default: 5.0 },
@@ -23,6 +24,8 @@ const UserSchema = new mongoose.Schema(
       enum: ["active", "banned", "inactive"],
       default: "active",
     },
+    // NEW: Track if user has completed the initial registration/referral step
+    registrationComplete: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

@@ -1,9 +1,9 @@
 // scheduler.js
 const cron = require("node-cron");
-const BotInstance = require("./models/BotInstance"); // Adjust path
-const User = require("./models/User"); // Adjust path
-const { stopFreqtradeProcess } = require("./services/freqtrade"); // Adjust path
-const { sendNotification } = require("./socket"); // Adjust path for WebSocket notifications
+const BotInstance = require("./models/BotInstance");
+const User = require("./models/User");
+const { stopFreqtradeProcess } = require("./services/freqtrade");
+const { sendNotification } = require("./socket");
 
 let scheduledTask = null;
 
@@ -91,7 +91,7 @@ const initScheduler = () => {
 
   // Optional: Run once on startup after a short delay to catch up immediately
   console.log("[Scheduler] Running initial check shortly...");
-  setTimeout(checkExpiredDemos, 15 * 1000); // Run 15 seconds after server starts
+  setTimeout(checkExpiredDemos, 15 * 1000);
 
   console.log(" [Scheduler] Initialized.");
 };
@@ -101,7 +101,7 @@ const stopScheduler = () => {
     console.log("⏹️ [Scheduler] Stopping...");
     scheduledTask.stop();
     scheduledTask = null;
-    console.log(" [Scheduler] Stopped.");
+    console.log("[Scheduler] Stopped.");
   }
 };
 

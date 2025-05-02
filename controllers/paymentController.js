@@ -8,7 +8,7 @@ const BotInstance = require("../models/BotInstance"); // Adjust path
 const Bot = require("../models/Bot"); // To get default strategy etc.
 const { sendBotSuccessEmail } = require("../utils/email"); // Adjust path for email utility
 const { sendTelegramMessage } = require("../utils/telegram"); // Adjust path for telegram utility
-
+const { processReferralReward } = require("../services/rewardService");
 // Ensure required environment variables are present
 if (!process.env.NOWPAYMENTS_API_KEY) {
   console.error("FATAL ERROR: NOWPAYMENTS_API_KEY is not set in .env");
@@ -167,9 +167,9 @@ exports.createCryptoPayment = async (req, res) => {
 
 // 🔹 Handle NowPayments Webhook (IPN - Instant Payment Notification)
 exports.nowPaymentsWebhook = async (req, res) => {
+  const operation = "nowPaymentsWebhook";
   // --- Verification Step ---
   const signature = req.headers["x-nowpayments-sig"];
-  // req.body is the raw Buffer here because of express.raw() in the route
   const isVerified = verifyNowPaymentsSignature(
     req.body,
     signature,
@@ -178,106 +178,134 @@ exports.nowPaymentsWebhook = async (req, res) => {
 
   // --- STRICT Check in Production ---
   if (!isVerified && process.env.NODE_ENV === "production") {
-    console.error(
-      "Webhook verification FAILED in production. Rejecting request."
-    );
+    logger.error({
+      operation,
+      message: "Webhook verification FAILED in production. Rejecting request.",
+    });
     return res.status(403).json({ message: "Invalid signature" });
   } else if (!isVerified) {
-    console.warn(
-      "Webhook verification failed/skipped (NODE_ENV!=production or missing secret). Processing anyway for testing, but DO NOT deploy this way."
-    );
+    logger.warn({
+      operation,
+      message:
+        "Webhook verification failed/skipped (NODE_ENV!=production or missing secret). Processing anyway for testing.",
+    });
   }
   // --- End Verification Step ---
 
   // --- Parse the JSON body AFTER verification ---
   let webhookData;
   try {
-    // req.body is a Buffer, convert to string and parse
     webhookData = JSON.parse(req.body.toString());
-    console.log(
-      "Received Verified/Processed NowPayments Webhook (Body Parsed):",
-      webhookData
-    );
+    logger.info({
+      operation,
+      message: "Received Verified/Processed NowPayments Webhook (Body Parsed)",
+      data: webhookData,
+    });
   } catch (parseError) {
-    console.error(
-      "Failed to parse webhook JSON body after verification:",
-      parseError
-    );
+    logger.error({
+      operation,
+      message: "Failed to parse webhook JSON body after verification:",
+      error: parseError,
+    });
     return res.status(400).json({ message: "Invalid JSON body" });
   }
   // --- End JSON Parsing ---
 
-  // Destructure data from the PARSED body
   const {
     payment_status,
-    order_id, // This is OUR referenceId
+    order_id, // Our referenceId
     pay_amount,
     price_amount,
     price_currency,
     payment_id,
     payin_hash,
-    // ... other fields
   } = webhookData;
 
   if (!order_id) {
-    console.error("Webhook missing order_id (referenceId).");
+    logger.error({
+      operation,
+      message: "Webhook missing order_id (referenceId).",
+    });
     return res.status(400).json({ message: "Missing order_id" });
   }
 
   try {
-    // Find our corresponding transaction record
     const tx = await Transaction.findOne({ referenceId: order_id });
     if (!tx) {
-      console.warn(
-        `Transaction not found for referenceId (order_id): ${order_id}. Acknowledging webhook.`
-      );
-      // Return 200 OK even if not found
+      logger.warn({
+        operation,
+        message: `Transaction not found for referenceId: ${order_id}. Acknowledging webhook.`,
+        referenceId: order_id,
+      });
       return res
         .status(200)
         .json({ message: "Transaction not found, webhook acknowledged." });
     }
 
+    // --- Prevent processing non-pending transactions multiple times ---
+    if (tx.status !== "pending") {
+      logger.info({
+        operation,
+        referenceId: tx.referenceId,
+        message: `Transaction status is already '${tx.status}'. Skipping webhook processing.`,
+      });
+      return res.status(200).json({
+        message: `Transaction already processed (${tx.status}). Webhook acknowledged.`,
+      });
+    }
+
     // Update transaction metadata
     tx.metadata.paymentStatusNowPayments = payment_status;
-    tx.metadata.amountPaidCrypto = pay_amount; // Actual amount paid in crypto
-    tx.metadata.priceAmount = price_amount; // Original amount requested
+    tx.metadata.amountPaidCrypto = pay_amount;
+    tx.metadata.priceAmount = price_amount;
     tx.metadata.priceCurrency = price_currency;
     tx.metadata.paymentIdNowPayments = payment_id;
     tx.metadata.payinHash = payin_hash;
     tx.metadata.webhookReceivedAt = new Date();
-    tx.metadata.webhookVerified = isVerified; // Record if signature was OK
+    tx.metadata.webhookVerified = isVerified;
 
     let sendNotifications = false;
     let userFriendlyBotName =
-      tx.metadata.botName || tx.metadata.botId || "Unknown Bot"; // Use name if available
+      tx.metadata.botName || tx.metadata.botId || "Unknown Bot";
+    let requiresReferralCheck = false; // <<<<<==== **** INITIALIZE THE FLAG HERE ****
 
     // --- Handle Payment Status ---
     if (["confirmed", "sending", "finished"].includes(payment_status)) {
-      // 'finished' is the most reliable success state
+      // Check if already processed (Important for Idempotency)
       if (tx.status !== "approved") {
-        console.log(
-          `Processing successful payment for Transaction ${tx.referenceId} (User: ${tx.userId}, Bot: ${userFriendlyBotName})`
-        );
+        logger.info({
+          operation,
+          message: `Processing successful payment for Transaction ${tx.referenceId}`,
+          userId: tx.userId,
+          bot: userFriendlyBotName,
+        });
         tx.status = "approved";
+        requiresReferralCheck = true;
 
         const botId = tx.metadata.botId;
         const userId = tx.userId;
 
         if (!botId || !userId) {
-          console.error(
-            `Transaction ${tx.referenceId} is missing botId or userId in metadata.`
-          );
-          tx.status = "rejected";
+          logger.error({
+            operation,
+            message: `Transaction ${tx.referenceId} missing botId or userId`,
+            transactionId: tx.referenceId,
+          });
+          tx.status = "rejected"; // Revert status if crucial info missing
           tx.metadata.error = "Webhook Error: Missing botId/userId in metadata";
+          requiresReferralCheck = false; // <<<<<==== Reset flag if error
         } else {
-          // Fetch Bot template *once*
           const botTemplate = await Bot.findById(botId);
           if (!botTemplate) {
-            console.error(
-              `Bot template ${botId} not found while processing payment ${tx.referenceId}. Cannot activate instance.`
-            );
-            tx.status = "rejected";
+            logger.error({
+              operation,
+              message: `Bot template ${botId} not found for payment ${tx.referenceId}.`,
+              botId: botId,
+              transactionId: tx.referenceId,
+            });
+            tx.status = "rejected"; // Revert status if template missing
             tx.metadata.error = `Webhook Error: Bot template ${botId} not found.`;
+            requiresReferralCheck = false; // <<<<<==== Reset flag if error
           } else {
             // Find existing or prepare new instance data
             let botInstance = await BotInstance.findOne({
@@ -287,12 +315,14 @@ exports.nowPaymentsWebhook = async (req, res) => {
             const now = new Date();
             let newExpiryDate;
             let isNewInstance = false;
-
             if (botInstance) {
-              // Update existing
-              console.log(
-                `Updating existing BotInstance ${botInstance._id} from webhook ${order_id}`
-              );
+              /* Update existing */
+              logger.info({
+                operation,
+                message: `Updating existing BotInstance ${botInstance._id}`,
+                instanceId: botInstance._id,
+                transactionId: order_id,
+              });
               botInstance.accountType = "paid";
               botInstance.active = true;
               const currentExpiry = botInstance.expiryDate || now;
@@ -301,61 +331,89 @@ exports.nowPaymentsWebhook = async (req, res) => {
               );
               newExpiryDate.setMonth(newExpiryDate.getMonth() + 1);
               botInstance.expiryDate = newExpiryDate;
-              // Optional: Reset config to template default on renewal? Decide this.
-              // botInstance.config = botTemplate.defaultConfig || {};
             } else {
-              // Create new
-              console.log(`Creating new BotInstance from webhook ${order_id}`);
+              /* Create new */
+              logger.info({
+                operation,
+                message: `Creating new BotInstance from webhook`,
+                transactionId: order_id,
+              });
               isNewInstance = true;
               newExpiryDate = new Date(now);
               newExpiryDate.setMonth(newExpiryDate.getMonth() + 1);
               botInstance = new BotInstance({
-                userId: userId,
-                botId: botId,
-                apiKey: "",
-                apiSecretKey: "", // Keys must be added by user
-                active: true,
-                accountType: "paid",
-                purchaseDate: now,
-                expiryDate: newExpiryDate,
-                strategy: botTemplate.defaultStrategy, // From template
-                exchange: "BINANCE", // TODO: Make configurable during purchase/settings?
-                running: false,
-                config: botTemplate.defaultConfig || {}, // From template
+                /* ... instance details ... */
               });
             }
-            await botInstance.save(); // Save changes
-            console.log(
-              `BotInstance ${botInstance._id} ${
+            await botInstance.save();
+            logger.info({
+              operation,
+              message: `BotInstance ${botInstance._id} ${
                 isNewInstance ? "created" : "updated"
-              }. New Expiry: ${newExpiryDate}`
-            );
+              }`,
+              expiry: newExpiryDate,
+              instanceId: botInstance._id,
+            });
             sendNotifications = true;
             tx.metadata.processedInstanceId = botInstance._id;
           }
         }
       } else {
-        console.log(
-          `Transaction ${tx.referenceId} already approved. Skipping activation logic.`
-        );
+        logger.info({
+          operation,
+          message: `Transaction ${tx.referenceId} already approved. Skipping activation.`,
+          transactionId: tx.referenceId,
+        });
       }
     } else if (["failed", "refunded", "expired"].includes(payment_status)) {
       if (tx.status !== "rejected") {
-        console.log(
-          `Processing failed/rejected payment for Transaction ${tx.referenceId}. Status: ${payment_status}`
-        );
+        logger.info({
+          operation,
+          message: `Processing failed/rejected payment Tx ${tx.referenceId}`,
+          status: payment_status,
+          transactionId: tx.referenceId,
+        });
         tx.status = "rejected";
       }
     } else {
-      console.log(
-        `Webhook for Tx ${tx.referenceId} with status: ${payment_status}. Awaiting final status.`
-      );
+      logger.info({
+        operation,
+        message: `Webhook for Tx ${tx.referenceId} status: ${payment_status}. Awaiting final status.`,
+        status: payment_status,
+        transactionId: tx.referenceId,
+      });
     }
 
-    await tx.save(); // Save updated transaction
+    // Save updated transaction status *before* triggering dependent actions
+    await tx.save();
+    logger.info({
+      operation,
+      message: `Transaction ${tx.referenceId} saved with status ${tx.status}`,
+    });
+
+    if (requiresReferralCheck && tx.status === "approved") {
+      logger.info({
+        operation,
+        message: `Transaction approved, attempting referral reward processing...`,
+        userId: tx.userId,
+        transactionId: tx.referenceId,
+        amount: tx.amount,
+      });
+      // Call the function
+      await processReferralReward(
+        tx.userId.toString(), // The user who paid (referred user)
+        tx.amount, // The amount of the transaction
+        tx.referenceId // Optional actionId for logging
+      );
+      logger.info({
+        operation,
+        message: `Referral reward processing attempted for ${tx.referenceId}`,
+      }); // Log completion/attempt
+    }
 
     // --- Send Notifications Only Once on Approval ---
     if (sendNotifications && tx.status === "approved") {
+      // ... (Your existing notification logic) ...
       const user = await User.findById(tx.userId).select("email telegramId");
       const botInstance = await BotInstance.findById(
         tx.metadata.processedInstanceId
@@ -363,35 +421,80 @@ exports.nowPaymentsWebhook = async (req, res) => {
       const expiryDateString =
         botInstance?.expiryDate?.toLocaleDateString() || "N/A";
       if (user) {
-        // Send Email...
+        const notificationMessage = `Payment confirmed! Your ${userFriendlyBotName} bot subscription is active until ${expiryDateString}.`;
+        const notificationType = "bot_status"; // Or 'payment_success' etc. Ensure this matches your Enum
+
+        try {
+          // Create persistent notification in DB
+          await Notification.create({
+            userId: tx.userId,
+            message: notificationMessage,
+            type: notificationType, // Use a relevant type from your Enum
+            // 'read' defaults to false
+          });
+          logger.info({
+            operation,
+            message: `Created DB notification for user ${tx.userId} for tx ${tx.referenceId}`,
+          });
+
+          // Send real-time notification via Socket.IO
+          sendNotification(
+            tx.userId.toString(),
+            notificationType,
+            notificationMessage
+          );
+        } catch (notificationError) {
+          logger.error({
+            operation,
+            message: `Failed to create/send notification for user ${tx.userId} / tx ${tx.referenceId}`,
+            error: notificationError.message,
+            userId: tx.userId,
+            transactionId: tx.referenceId,
+          });
+          // Decide if this error is critical. Usually, it's okay to continue
+          // even if notification fails, as the core bot activation succeeded.
+        }
         if (user.email && process.env.SMTP_HOST) {
           try {
             await sendBotSuccessEmail(user.email, userFriendlyBotName);
           } catch (e) {
-            console.error("Email Error:", e);
+            logger.error({ operation: "emailSendError", error: e });
           }
         }
-        // Send Telegram...
         if (user.telegramId && process.env.TELEGRAM_BOT_TOKEN) {
           try {
             await sendTelegramMessage(
               user.telegramId,
-              ` Payment confirmed! Your *${userFriendlyBotName}* bot subscription is active until ${expiryDateString}.\n\n➡️ *NEXT STEP:* Please add your exchange API keys in the dashboard to start trading: ${FRONTEND_URL}/dashboard`
+              `✅ ${notificationMessage}\n\n➡️ *NEXT STEP:* Please add your exchange API keys in the dashboard to start trading: ${FRONTEND_URL}/dashboard`
             );
           } catch (e) {
-            console.error("Telegram Error:", e);
+            logger.error({ operation: "telegramSendError", error: e });
           }
         }
+      } else {
+        logger.warn({
+          operation,
+          message: `User ${tx.userId} not found when trying to send notifications for tx ${tx.referenceId}`,
+        });
       }
     }
 
     res.status(200).json({ message: "Webhook received and processed." });
   } catch (err) {
-    console.error("❌ Webhook Processing Error:", err.message, err.stack);
+    logger.error({
+      operation,
+      message: "Webhook Processing Error",
+      error: err.message,
+      stack: err.stack,
+      referenceId: order_id,
+    });
     res
       .status(500)
       .json({ message: "Internal server error processing webhook." });
   }
+};
+exports.getPaymentStatus = async (req, res) => {
+  // ... (implementation as provided previously) ...
 };
 
 // 🔹 Get Payment Status (For Frontend Polling)
