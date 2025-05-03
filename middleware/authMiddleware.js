@@ -82,7 +82,7 @@ const authenticateUser = async (req, res, next) => {
           uniqueCode = nanoid(10);
         }
         const referralLink = `${
-          process.env.FRONTEND_URL || "http://localhost:3000"
+          process.env.ALLOWED_ORIGINS || "http://localhost:3000"
         }/signup?ref=${uniqueCode}`;
         logger.info({
           operation,
