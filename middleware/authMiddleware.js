@@ -83,7 +83,7 @@ const authenticateUser = async (req, res, next) => {
         }
         const referralLink = `${
           process.env.ALLOWED_ORIGINS || "http://localhost:3000"
-        }/signup?ref=${uniqueCode}`;
+        }/register?ref=${uniqueCode}`;
         logger.info({
           operation,
           message: `Generated referral code ${uniqueCode} for new user.`,
