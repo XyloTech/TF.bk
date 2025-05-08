@@ -10,7 +10,15 @@ const TransactionSchema = new mongoose.Schema(
     amount: { type: Number, required: true },
     transactionType: {
       type: String,
-      enum: ["recharge", "withdrawal", "trade_fee", "referral_bonus"],
+      enum: [
+        "bot_purchase", // For when a user buys a bot subscription
+        "balance_recharge",
+        "withdrawal",
+        "trade_fee",
+        "referral_bonus",
+        "system_credit",
+        "refund",
+      ],
       required: true,
     },
     status: {

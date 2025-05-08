@@ -6,6 +6,18 @@ const BotSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true, unique: true }, // Added unique, trim
     description: { type: String, required: true, trim: true },
     price: { type: Number, required: true, min: 0 }, // Added min: 0
+    feeCreditPercentage: {
+      type: Number,
+      default: 0, // Default to 0% credit if not specified for a bot
+      min: 0,
+      max: 1, // Represents 0% to 100% (e.g., 0.5 for 50%)
+    },
+    // --- THIS FIELD IS NEEDED ---
+    durationMonths: {
+      type: Number,
+      default: 1, // Default to 1 month subscription
+      min: 1,
+    },
     profitFee: { type: Number, required: true, min: 0, max: 100 },
     features: [{ type: String }],
     active: { type: Boolean, default: true },
