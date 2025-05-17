@@ -145,51 +145,113 @@ exports.getUserBots = async (req, res) => {
 // 🔹 Update API Keys for a Specific Bot Instance
 exports.updateBotInstanceKeys = async (req, res) => {
   try {
+    // exports.updateBotInstanceKeys // This comment can be removed
     const { botInstanceId } = req.params;
-    const { apiKey, apiSecretKey } = req.body;
+    const { apiKey, apiSecretKey, telegramId } = req.body; // Correct: All three are expected
     const userId = req.userDB._id;
 
-    if (!apiKey || !apiSecretKey) {
-      return res
-        .status(400)
-        .json({ message: "API Key and Secret Key are required." });
+    // Optional: More granular validation if fields are provided but empty
+    if (apiKey === "") {
+      // Good: Check for explicitly empty apiKey
+      return res.status(400).json({
+        message: "API Key cannot be an empty string if provided for update.",
+      });
+    }
+    if (apiSecretKey === "") {
+      // Good: Check for explicitly empty apiSecretKey
+      return res.status(400).json({
+        message:
+          "API Secret Key cannot be an empty string if provided for update.",
+      });
     }
 
     const botInstance = await BotInstance.findOne({
-      _id: botInstanceId,
-      userId: userId,
+      _id: botInstanceId, // This was missing the query conditions in your paste
+      userId: userId, // Add this back
     });
-
     if (!botInstance) {
+      // This was missing the response in your paste
       return res
         .status(404)
         .json({ message: "Bot instance not found or permission denied." });
     }
 
-    if (botInstance.running) {
-      return res
-        .status(400)
-        .json({ message: "Please stop the bot before updating API keys." });
+    let updatedFields = false;
+    let criticalConfigChanged = false;
+
+    // Check if apiKey is provided, non-empty, AND different from current
+    if (
+      apiKey && // ensure apiKey is provided
+      apiKey.trim() !== "" && // ensure it's not just empty spaces
+      apiKey.trim() !== botInstance.apiKey // ensure it's actually a change
+    ) {
+      botInstance.apiKey = apiKey.trim();
+      updatedFields = true;
+      criticalConfigChanged = true;
     }
 
-    // Update keys - Pass plain text, pre-save hook will encrypt the secret
-    botInstance.apiKey = apiKey;
-    botInstance.apiSecretKey = apiSecretKey;
+    // Check if apiSecretKey is provided and non-empty
+    // We don't compare the secret itself because it's encrypted.
+    // Any new non-empty secret provided is considered a change.
+    if (apiSecretKey && apiSecretKey.trim() !== "") {
+      botInstance.apiSecretKey = apiSecretKey; // Pre-save hook will handle encryption
+      updatedFields = true;
+      criticalConfigChanged = true;
+    }
 
-    await botInstance.save(); // Triggers the pre-save hook
+    // Check if telegramId is provided as a string AND different from current
+    if (
+      typeof telegramId === "string" && // ensure telegramId is provided as a string (allows empty string)
+      telegramId.trim() !== botInstance.telegramId // ensure it's actually a change
+    ) {
+      botInstance.telegramId = telegramId.trim();
+      updatedFields = true;
+      criticalConfigChanged = true; // Changing telegram ID also requires restart for Freqtrade
+    }
 
+    if (!updatedFields) {
+      // Good: No actual changes detected
+      return res
+        .status(400)
+        .json({ message: "No changes provided to update." });
+    }
+
+    if (botInstance.running && criticalConfigChanged) {
+      // Good: Check if running AND critical change
+      return res.status(400).json({
+        message: "Please stop the bot before updating API keys or Telegram ID.",
+      });
+    }
+
+    await botInstance.save(); // Correct: Triggers pre-save hook for apiSecretKey
+
+    const updatedInstance = await BotInstance.findById(botInstanceId); // Good: Fetch fresh data
     res.json({
-      message:
-        "API keys updated successfully. You may need to restart the bot.",
+      message: "Bot instance configuration updated successfully.",
+      instance: updatedInstance,
     });
   } catch (error) {
-    console.error("Error updating bot instance keys:", error);
+    // Good: General error handling
+    // Add more specific logging as in my previous full example for better debugging
+    logger.error("Error updating bot instance keys/config:", {
+      error: error.message,
+      stack: error.stack,
+      botInstanceId: req.params.botInstanceId,
+      userId: req.userDB?._id,
+      body: req.body, // Be cautious logging full body if it might contain secrets in some scenarios, but for errors it's often useful
+    });
     if (error.name === "ValidationError") {
       return res
         .status(400)
         .json({ message: "Validation failed", errors: error.errors });
     }
-    res.status(500).json({ message: "Failed to update API keys." });
+    // Consider more specific error messages for the user
+    res
+      .status(500)
+      .json({
+        message:
+          "Failed to update bot instance configuration. Please try again.",
+      });
   }
 };
 
@@ -361,6 +423,46 @@ exports.stopBotInstance = async (req, res) => {
       message: `Failed to stop bot instance: ${
         error.message || "Unknown error"
       }`,
+    });
+  }
+};
+exports.getBotInstanceConfigDetails = async (req, res) => {
+  try {
+    const { botInstanceId } = req.params;
+    const userId = req.userDB._id;
+
+    const instance = await BotInstance.findOne({
+      _id: botInstanceId,
+      userId: userId,
+    }).select("apiKey apiSecretKey telegramId exchange active running"); // Select relevant fields
+
+    if (!instance) {
+      return res
+        .status(404)
+        .json({ message: "Bot instance not found or permission denied." });
+    }
+
+    res.json({
+      // Do NOT send actual keys. Just indicate if they are set.
+      apiKeySet: !!(instance.apiKey && instance.apiKey.trim() !== ""),
+      apiSecretSet: !!(
+        instance.apiSecretKey && instance.apiSecretKey.trim() !== ""
+      ), // Encrypted, so just check existence
+      telegramId: instance.telegramId || "", // Send current instance-specific telegramId
+      exchange: instance.exchange,
+      active: instance.active,
+      running: instance.running,
+      // Add any other non-sensitive fields useful for the config page
+    });
+  } catch (error) {
+    logger.error("Error fetching bot instance config details:", {
+      error: error.message,
+      stack: error.stack,
+      botInstanceId: req.params.botInstanceId,
+      userId: req.userDB?._id,
+    });
+    res.status(500).json({
+      message: "Failed to retrieve bot instance configuration details.",
     });
   }
 };

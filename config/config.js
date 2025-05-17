@@ -17,9 +17,12 @@ if (missingEnvVars.length > 0) {
   );
 }
 
-// Validate CRYPTO_SECRET_KEY length (must be 32 characters for AES-256)
-if (process.env.CRYPTO_SECRET_KEY.length !== 32) {
-  throw new Error("CRYPTO_SECRET_KEY must be exactly 32 characters long");
+const cryptoSecretKeyFromEnv = process.env.CRYPTO_SECRET_KEY;
+
+if (cryptoSecretKeyFromEnv.length !== 64) {
+  throw new Error(
+    "CRYPTO_SECRET_KEY must be exactly 64 hexadecimal characters long (to represent a 32-byte key)."
+  );
 }
 
 // Configuration object
