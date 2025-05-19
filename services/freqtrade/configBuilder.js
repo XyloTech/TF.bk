@@ -106,7 +106,7 @@ async function generateInstanceConfig(instance) {
   const backendConfig = {
     dry_run: instance.accountType === "demo",
     exchange: {
-      name: instance.exchange,
+      name: instance.exchange.toLowerCase(), // <--- APPLY .toLowerCase() HERE
       key: instance.apiKey,
       secret: apiSecret,
     },
