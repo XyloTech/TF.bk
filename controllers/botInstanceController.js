@@ -266,6 +266,8 @@ exports.startBotInstance = async (req, res) => {
 
   const botInstanceId = req.params.botInstanceId;
   const loggedInUserId = req.userDB._id; // This should be an ObjectId
+  console.log(`sultan ${botInstanceId} ${loggedInUserId}`);
+  
 
   try {
     // --- Step 1: Find instance by ID and verify ownership in one query ---
