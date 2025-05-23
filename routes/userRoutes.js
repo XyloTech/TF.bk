@@ -14,7 +14,7 @@ router.get("/me", authenticateUser, userController.getProfile);
 
 // PUT /api/users/me (Replaces your old PUT /profile)
 // Updates the logged-in user's profile (limited fields like name, telegramId)
-router.put("/me", authenticateUser, userController.updateProfile);
+router.put("/update-api-keys", authenticateUser, userController.updateProfile);
 
 // POST /api/users/me/complete-registration (NEW - For Referrals)
 // Processes referral code after first login, marks registration complete
