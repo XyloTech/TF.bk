@@ -10,29 +10,30 @@ const BotInstanceSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    apiKey: { type: String, required: true },
-    apiSecretKey: { type: String, required: true }, // Stores the *encrypted* secret key
+    apiKey: { type: String, default: "" }, // MODIFIED: Not required, default empty
+    apiSecretKey: { type: String, default: "" }, // MODIFIED: Not required, default empty. Stores *encrypted* key.
     telegramId: { type: String, default: "" },
-    active: { type: Boolean, default: true }, // Controls if the bot *can* be run (overall status)
+    active: { type: Boolean, default: true },
     purchaseDate: { type: Date, required: true },
-    expiryDate: { type: Date, required: true }, // Demo or subscription expiry
+    expiryDate: { type: Date, required: true },
     accountType: {
       type: String,
       enum: ["demo", "paid"],
       required: true,
       default: "demo",
     },
-    strategy: { type: String, default: "DEFAULT_STRATEGY" }, // Consider making required or fetching from Bot model
+    strategy: { type: String, default: "DEFAULT_STRATEGY" },
     exchange: {
       type: String,
-      required: true,
-      enum: ["BINANCE", "KUCOIN", "BYBIT", "BINGX", "OKX", "BITGET"], // Add all supported exchanges
-      uppercase: true, // Ensure consistent casing
+      // MODIFIED: Not strictly required at instance creation for demo. User will set it on configure page.
+      // required: true, <--- REMOVED
+      enum: ["", "BINANCE", "KUCOIN", "BYBIT", "BINGX", "OKX", "BITGET"], // MODIFIED: Added "" to allow empty string
+      uppercase: true,
+      default: "", // MODIFIED: Default to empty string
     },
-    running: { type: Boolean, default: false }, // Tracks if the PM2 process *should* be running
-    lastExecuted: { type: Date }, // Timestamp of last start/significant action
+    running: { type: Boolean, default: false },
+    lastExecuted: { type: Date },
     config: {
-      // Optional Freqtrade override configurations specific to this instance
       type: Object,
       default: {},
       validate: {
@@ -48,13 +49,18 @@ const BotInstanceSchema = new mongoose.Schema(
 
 // Pre-save hook to ENCRYPT apiSecretKey
 BotInstanceSchema.pre("save", function (next) {
-  // Only encrypt if the secret key is modified (or new)
   if (this.isModified("apiSecretKey")) {
     try {
-      // Encrypt the plain text secret key before saving
-      if (this.apiSecretKey) {
-        // Avoid encrypting empty strings if possible
-        this.apiSecretKey = encrypt(this.apiSecretKey);
+      // Only encrypt if apiSecretKey is a non-empty string
+      if (
+        this.apiSecretKey &&
+        typeof this.apiSecretKey === "string" &&
+        this.apiSecretKey.trim() !== ""
+      ) {
+        this.apiSecretKey = encrypt(this.apiSecretKey.trim()); // Trim before encrypting
+      } else {
+        // If it's empty, ensure it's stored as an empty string
+        this.apiSecretKey = "";
       }
     } catch (error) {
       console.error(
@@ -70,16 +76,22 @@ BotInstanceSchema.pre("save", function (next) {
 // Remove sensitive fields from JSON responses
 BotInstanceSchema.set("toJSON", {
   transform: function (doc, ret) {
-    delete ret.apiKey; // Still remove API key for safety
-    delete ret.apiSecretKey; // Remove ENCRYPTED secret key
+    // apiKey is not encrypted, but still good to remove from default toJSON
+    // unless specifically selected for an internal operation.
+    delete ret.apiKey;
+    delete ret.apiSecretKey; // encrypted secret key
     delete ret.__v;
     return ret;
   },
 });
 
 // Indexes for performance
-BotInstanceSchema.index({ userId: 1, createdAt: -1 }); // Get user bots
-BotInstanceSchema.index({ accountType: 1, active: 1, expiryDate: 1 }); // Scheduler check
-BotInstanceSchema.index({ running: 1 }); // Potentially useful for finding running bots
+BotInstanceSchema.index({ userId: 1, createdAt: -1 });
+BotInstanceSchema.index({ accountType: 1, active: 1, expiryDate: 1 });
+BotInstanceSchema.index({ running: 1 });
+BotInstanceSchema.index(
+  { userId: 1, botId: 1, accountType: 1 },
+  { unique: true, partialFilterExpression: { accountType: "demo" } }
+); // Ensures only one demo per user per bot template
 
 module.exports = mongoose.model("BotInstance", BotInstanceSchema);

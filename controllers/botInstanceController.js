@@ -1,176 +1,250 @@
 // controllers/botInstanceController.js
-
+const mongoose = require("mongoose");
 const BotInstance = require("../models/BotInstance");
-const Bot = require("../models/Bot"); // Assuming Bot model is needed for purchaseBot
+const Bot = require("../models/Bot");
 const {
   startFreqtradeProcess,
   stopFreqtradeProcess,
-} = require("../services/freqtrade"); // Adjust path if needed
-// Note: Decrypt is handled by the manager, not directly needed here usually
+} = require("../services/freqtrade");
 const logger = require("../utils/logger");
-// 🔹 Purchase Bot
-exports.purchaseBot = async (req, res) => {
-  try {
-    let {
-      // Use let to potentially modify config
-      botId,
-      apiKey,
-      apiSecretKey,
-      telegramId,
-      strategy,
-      exchange,
-      config,
-      accountType: requestedAccountType,
-    } = req.body;
-    const userId = req.userDB._id; // Get user ID from authenticated user
 
-    // --- START: Repeat Demo Prevention ---
+// 🔹 Purchase Bot (Handles Demo Shell Creation and Paid Bot Creation)
+exports.purchaseBot = async (req, res) => {
+  const operation = "purchaseBot";
+  try {
+    const {
+      botId: requestedBotId,
+      telegramId: requestedTelegramId,
+      strategy: requestedStrategy,
+      config: requestedConfig,
+      accountType: requestedAccountType, // Frontend sends this for demo initiation
+    } = req.body;
+    const userId = req.userDB._id;
+
+    logger.info(
+      `[${operation}] User: ${userId} attempting to purchase/initiate bot. Body:`,
+      // Mask sensitive fields if they were accidentally sent for demo
+      {
+        ...req.body,
+        apiKey: req.body.apiKey ? "***" : undefined,
+        apiSecretKey: req.body.apiSecretKey ? "***" : undefined,
+      }
+    );
+
     const accountType = requestedAccountType === "paid" ? "paid" : "demo";
 
+    // Validate Bot Template ID
+    if (!requestedBotId || !mongoose.Types.ObjectId.isValid(requestedBotId)) {
+      logger.warn(
+        `[${operation}] Invalid Bot ID provided. UserID: ${userId}, BotID: ${requestedBotId}`
+      );
+      return res
+        .status(400)
+        .json({ message: "Valid Bot ID (botId) is required." });
+    }
+    const botTemplate = await Bot.findById(requestedBotId);
+    if (!botTemplate) {
+      logger.warn(
+        `[${operation}] Bot template not found. UserID: ${userId}, BotID: ${requestedBotId}`
+      );
+      return res.status(404).json({ message: "Bot template not found." });
+    }
+    logger.info(
+      `[${operation}] Found bot template: ${botTemplate.name} for BotID: ${requestedBotId}`
+    );
+
+    // --- Repeat Demo Prevention (primary check, DB index is backup) ---
     if (accountType === "demo") {
+      logger.info(
+        `[${operation}] Demo request. Checking for existing demo for User: ${userId}, BotID: ${requestedBotId}`
+      );
+      // The unique index on BotInstance model will also prevent this at DB level
       const existingDemo = await BotInstance.findOne({
         userId: userId,
-        botId: botId, // Check for the same bot template
+        botId: requestedBotId,
         accountType: "demo",
       });
-
       if (existingDemo) {
+        logger.warn(
+          `[${operation}] User ${userId} already has a demo for BotID ${requestedBotId}. Instance: ${existingDemo._id}`
+        );
         return res
           .status(403)
           .json({ message: "You have already used a demo for this bot." });
       }
-    }
-    // --- END: Repeat Demo Prevention ---
-
-    // Validate required fields
-    if (!botId || !apiKey || !apiSecretKey || !exchange) {
-      return res.status(400).json({
-        message:
-          "Missing required fields (botId, apiKey, apiSecretKey, exchange).",
-      });
+      logger.info(
+        `[${operation}] No existing demo found for User: ${userId}, BotID: ${requestedBotId}. Proceeding.`
+      );
     }
 
-    // Validate Bot Template
-    const bot = await Bot.findById(botId);
-    if (!bot)
-      return res.status(404).json({ message: "Bot template not found" });
-
-    // Normalize and Validate Exchange from Schema Enum
-    const validExchanges = BotInstance.schema.path("exchange").enumValues;
-    if (
-      typeof exchange !== "string" ||
-      !validExchanges.includes(exchange.toUpperCase())
-    ) {
-      return res.status(400).json({
-        message: `Invalid exchange. Supported exchanges: ${validExchanges.join(
-          ", "
-        )}`,
-      });
-    }
-    exchange = exchange.toUpperCase();
-
-    // Ensure config is an object
-    config =
-      typeof config === "object" && config !== null && !Array.isArray(config)
-        ? config
-        : {};
-
-    // Calculate expiry date
     const purchaseDate = new Date();
     let expiryDate;
-    if (accountType === "paid") {
-      expiryDate = new Date(purchaseDate);
-      expiryDate.setMonth(expiryDate.getMonth() + 1); // 1 month expiry
-      console.log(
-        `Setting PAID expiry for user ${userId} - BotInstance: ${expiryDate}`
-      );
-    } else {
-      expiryDate = new Date(purchaseDate.getTime() + 24 * 60 * 60 * 1000); // 24 hours
-      console.log(
-        `Setting DEMO expiry for user ${userId} - BotInstance: ${expiryDate}`
-      );
-    }
 
-    // Create new BotInstance document
-    const botInstance = new BotInstance({
-      botId,
+    // Prepare base instance data
+    let instanceData = {
+      botId: requestedBotId,
       userId,
-      apiKey,
-      apiSecretKey, // Pass plain text key here, hook encrypts it
-      telegramId: telegramId || req.userDB.telegramId || "",
-      strategy: strategy || bot.defaultStrategy || "DEFAULT_STRATEGY", // Use bot template's default?
-      exchange,
-      config,
+      telegramId:
+        requestedTelegramId ||
+        req.userDB.telegramId || // User's global default
+        botTemplate.defaultTelegramId || // Template's default
+        "", // Fallback
+      strategy:
+        requestedStrategy ||
+        botTemplate.defaultStrategy || // Template's default
+        "DEFAULT_STRATEGY", // Fallback
+      config:
+        (typeof requestedConfig === "object" &&
+        requestedConfig !== null &&
+        !Array.isArray(requestedConfig)
+          ? requestedConfig
+          : botTemplate.defaultConfig) || {}, // Template's default or empty
       purchaseDate,
-      expiryDate,
       accountType,
       active: true,
       running: false,
-    });
+      // For DEMO initiation, keys and exchange are intentionally left to default (empty string from model)
+      // They will be set by the user on the configure page
+      apiKey: "",
+      apiSecretKey: "",
+      exchange: "",
+    };
 
-    await botInstance.save();
+    if (accountType === "paid") {
+      // For PAID bots, API keys and exchange MUST be provided at purchase if this endpoint is used.
+      // This path assumes a direct paid creation, not one following a payment gateway webhook.
+      const { apiKey, apiSecretKey, exchange: paidExchange } = req.body;
+      if (!apiKey || !apiSecretKey || !paidExchange) {
+        logger.warn(
+          `[${operation}] Missing apiKey, apiSecretKey, or exchange for PAID bot creation. User: ${userId}`
+        );
+        return res.status(400).json({
+          message:
+            "For paid bots, apiKey, apiSecretKey, and exchange are required at purchase.",
+        });
+      }
 
-    res.status(201).json(botInstance); // toJSON removes sensitive fields
+      const validExchanges = BotInstance.schema
+        .path("exchange")
+        .enumValues.filter((e) => e !== ""); // Valid non-empty exchanges
+      if (
+        typeof paidExchange !== "string" ||
+        !validExchanges.includes(paidExchange.toUpperCase())
+      ) {
+        logger.warn(
+          `[${operation}] Invalid exchange '${paidExchange}' for PAID bot. User: ${userId}`
+        );
+        return res.status(400).json({
+          message: `Invalid exchange. Supported exchanges: ${validExchanges.join(
+            ", "
+          )}`,
+        });
+      }
+
+      instanceData.apiKey = apiKey.trim();
+      instanceData.apiSecretKey = apiSecretKey; // Pre-save hook will encrypt this plain text
+      instanceData.exchange = paidExchange.toUpperCase();
+
+      expiryDate = new Date(purchaseDate);
+      expiryDate.setMonth(
+        expiryDate.getMonth() + (botTemplate.durationMonths || 1)
+      );
+      logger.info(
+        `[${operation}] Setting PAID expiry for User ${userId} to: ${expiryDate}`
+      );
+    } else {
+      // Demo account
+      expiryDate = new Date(purchaseDate.getTime() + 24 * 60 * 60 * 1000); // 24 hours
+      logger.info(
+        `[${operation}] Setting DEMO expiry for User ${userId} to: ${expiryDate}`
+      );
+    }
+    instanceData.expiryDate = expiryDate;
+
+    const botInstance = new BotInstance(instanceData);
+    await botInstance.save(); // This will trigger the pre-save hook for apiSecretKey
+    logger.info(
+      `[${operation}] Successfully created BotInstance ${botInstance._id} for User ${userId}, Type: ${accountType}`
+    );
+
+    res.status(201).json(botInstance.toJSON());
   } catch (error) {
-    console.error("Error purchasing bot instance:", error);
+    logger.error(
+      `[${operation}] Error creating bot instance for User ${req.userDB?._id}:`,
+      {
+        // It's often helpful to log the actual error object first, then extra context
+        error: error, // or error.message, error.stack if 'error' object is too verbose
+        message: error.message, // Redundant if error object is logged
+        stack: error.stack, // Redundant if error object is logged
+        userId: req.userDB?._id, // Context
+        bodyReceived: { ...req.body, apiKey: "***", apiSecretKey: "***" }, // Masked body
+      }
+    );
     if (error.name === "ValidationError") {
       return res
         .status(400)
         .json({ message: "Validation failed", errors: error.errors });
     }
     if (error.code === 11000) {
-      return res
-        .status(409)
-        .json({ message: "Duplicate entry error.", details: error.keyValue });
+      logger.warn(
+        `[${operation}] Duplicate key error (E11000) for User ${req.userDB?._id}, likely tried to create duplicate demo. Details:`,
+        error.keyValue
+      );
+      return res.status(409).json({
+        message:
+          "Operation failed. You might have already created a demo for this bot.",
+        details: error.keyValue,
+      });
     }
-    res.status(500).json({ message: "Failed to purchase bot instance." });
+    res.status(500).json({ message: "Failed to create bot instance." });
   }
 };
 
 // 🔹 Get User Bots
 exports.getUserBots = async (req, res) => {
+  const operation = "getUserBots";
   try {
     const userId = req.userDB._id;
     const bots = await BotInstance.find({ userId: userId })
-      .populate("botId", "name description imageUrl price") // Populate necessary fields
+      .populate("botId", "name description imageUrl price defaultStrategy")
       .sort({ createdAt: -1 });
 
-    res.json(bots); // toJSON removes sensitive fields
+    res.json(bots.map((bot) => bot.toJSON()));
   } catch (error) {
-    console.error("Error fetching user bots:", error);
+    logger.error(
+      `[${operation}] Error fetching user bots for User ${req.userDB?._id}:`,
+      error
+    );
     res.status(500).json({ message: "Failed to retrieve bot instances." });
   }
 };
 
-// 🔹 Update API Keys for a Specific Bot Instance
+// 🔹 Update API Keys, Secret, Telegram ID, and Exchange for a Specific Bot Instance
 exports.updateBotInstanceKeys = async (req, res) => {
+  const operation = "updateBotInstanceKeys";
   try {
-    // exports.updateBotInstanceKeys // This comment can be removed
     const { botInstanceId } = req.params;
-    const { apiKey, apiSecretKey, telegramId } = req.body; // Correct: All three are expected
+    const { apiKey, apiSecretKey, telegramId, exchange } = req.body;
     const userId = req.userDB._id;
 
-    // Optional: More granular validation if fields are provided but empty
-    if (apiKey === "") {
-      // Good: Check for explicitly empty apiKey
-      return res.status(400).json({
-        message: "API Key cannot be an empty string if provided for update.",
-      });
-    }
-    if (apiSecretKey === "") {
-      // Good: Check for explicitly empty apiSecretKey
-      return res.status(400).json({
-        message:
-          "API Secret Key cannot be an empty string if provided for update.",
-      });
-    }
+    logger.info(
+      `[${operation}] Attempting to update BotInstance ${botInstanceId} for User ${userId}. Payload:`,
+      {
+        ...req.body,
+        apiKey: apiKey ? "***" : undefined,
+        apiSecretKey: apiSecretKey ? "***" : undefined,
+      }
+    );
 
     const botInstance = await BotInstance.findOne({
-      _id: botInstanceId, // This was missing the query conditions in your paste
-      userId: userId, // Add this back
+      _id: botInstanceId,
+      userId: userId,
     });
+
     if (!botInstance) {
-      // This was missing the response in your paste
+      logger.warn(
+        `[${operation}] BotInstance ${botInstanceId} not found or permission denied for User ${userId}.`
+      );
       return res
         .status(404)
         .json({ message: "Bot instance not found or permission denied." });
@@ -179,185 +253,324 @@ exports.updateBotInstanceKeys = async (req, res) => {
     let updatedFields = false;
     let criticalConfigChanged = false;
 
-    // Check if apiKey is provided, non-empty, AND different from current
-    if (
-      apiKey && // ensure apiKey is provided
-      apiKey.trim() !== "" && // ensure it's not just empty spaces
-      apiKey.trim() !== botInstance.apiKey // ensure it's actually a change
-    ) {
-      botInstance.apiKey = apiKey.trim();
-      updatedFields = true;
-      criticalConfigChanged = true;
+    // API Key Update Logic
+    if (apiKey !== undefined) {
+      const newApiKey = apiKey.trim();
+      // Check if it's a change from the current (unencrypted) apiKey
+      if (newApiKey !== botInstance.apiKey) {
+        botInstance.apiKey = newApiKey; // Store trimmed, unencrypted
+        updatedFields = true;
+        criticalConfigChanged = true;
+        logger.info(
+          `[${operation}] Updated API Key for BotInstance ${botInstanceId}.`
+        );
+      }
     }
 
-    // Check if apiSecretKey is provided and non-empty
-    // We don't compare the secret itself because it's encrypted.
-    // Any new non-empty secret provided is considered a change.
-    if (apiSecretKey && apiSecretKey.trim() !== "") {
-      botInstance.apiSecretKey = apiSecretKey; // Pre-save hook will handle encryption
+    // API Secret Key Update Logic
+    if (apiSecretKey !== undefined) {
+      // If apiSecretKey is provided, it's assumed to be new plain text.
+      // The pre-save hook will encrypt it if it's non-empty.
+      // If it's an empty string, it means user wants to clear it.
+      // We can't compare to the existing encrypted secret, so any provided value is treated as a change.
+      botInstance.apiSecretKey = apiSecretKey; // Store plain text temporarily; pre-save encrypts
       updatedFields = true;
       criticalConfigChanged = true;
+      logger.info(
+        `[${operation}] API Secret Key provided for BotInstance ${botInstanceId}. Will be processed on save.`
+      );
     }
 
-    // Check if telegramId is provided as a string AND different from current
-    if (
-      typeof telegramId === "string" && // ensure telegramId is provided as a string (allows empty string)
-      telegramId.trim() !== botInstance.telegramId // ensure it's actually a change
-    ) {
-      botInstance.telegramId = telegramId.trim();
-      updatedFields = true;
-      criticalConfigChanged = true; // Changing telegram ID also requires restart for Freqtrade
+    // Telegram ID Update Logic
+    if (telegramId !== undefined && typeof telegramId === "string") {
+      const newTelegramId = telegramId.trim();
+      if (newTelegramId !== botInstance.telegramId) {
+        botInstance.telegramId = newTelegramId;
+        updatedFields = true;
+        criticalConfigChanged = true;
+        logger.info(
+          `[${operation}] Updated Telegram ID for BotInstance ${botInstanceId} to '${newTelegramId}'.`
+        );
+      }
+    }
+
+    // Exchange Update Logic
+    if (exchange !== undefined) {
+      const newExchange =
+        typeof exchange === "string" ? exchange.trim().toUpperCase() : "";
+
+      if (newExchange !== botInstance.exchange) {
+        if (newExchange !== "") {
+          // If setting to a non-empty value
+          const validExchanges = BotInstance.schema
+            .path("exchange")
+            .enumValues.filter((e) => e !== "");
+          if (!validExchanges.includes(newExchange)) {
+            logger.warn(
+              `[${operation}] Invalid exchange value '${newExchange}' for BotInstance ${botInstanceId}.`
+            );
+            return res.status(400).json({
+              message: `Invalid exchange value. Supported: ${validExchanges.join(
+                ", "
+              )}`,
+            });
+          }
+        }
+        // Allow setting/changing exchange if:
+        // 1. The instance's current exchange is empty (e.g., new demo shell)
+        // 2. OR The bot is not running
+        if (botInstance.exchange === "" || !botInstance.running) {
+          botInstance.exchange = newExchange;
+          updatedFields = true;
+          criticalConfigChanged = true;
+          logger.info(
+            `[${operation}] Updated Exchange for BotInstance ${botInstanceId} to '${newExchange}'.`
+          );
+        } else {
+          // Bot is running and exchange is already set and different from new one
+          logger.warn(
+            `[${operation}] Attempt to change exchange on running BotInstance ${botInstanceId}.`
+          );
+          return res.status(400).json({
+            message: "Please stop the bot before changing the exchange.",
+          });
+        }
+      }
     }
 
     if (!updatedFields) {
-      // Good: No actual changes detected
+      logger.info(
+        `[${operation}] No actual changes detected for BotInstance ${botInstanceId}.`
+      );
       return res
         .status(400)
         .json({ message: "No changes provided to update." });
     }
 
     if (botInstance.running && criticalConfigChanged) {
-      // Good: Check if running AND critical change
+      logger.warn(
+        `[${operation}] Critical config change attempted on running BotInstance ${botInstanceId} while other non-critical fields might have been updated if !updatedFields was false.`
+      );
+      // This check is a safeguard; individual field logic should ideally prevent this.
+      // Re-fetch to ensure no partial save if this happens due to complex conditions.
+      // However, if updatedFields is true, it means some field IS being changed.
       return res.status(400).json({
-        message: "Please stop the bot before updating API keys or Telegram ID.",
+        message:
+          "Please stop the bot before updating critical configurations (API keys, Secret, Telegram ID, Exchange).",
       });
     }
 
-    await botInstance.save(); // Correct: Triggers pre-save hook for apiSecretKey
+    await botInstance.save(); // Triggers pre-save hook for apiSecretKey
+    logger.info(
+      `[${operation}] Successfully saved updates for BotInstance ${botInstanceId}.`
+    );
 
-    const updatedInstance = await BotInstance.findById(botInstanceId); // Good: Fetch fresh data
+    const updatedInstance = await BotInstance.findById(botInstanceId);
     res.json({
       message: "Bot instance configuration updated successfully.",
-      instance: updatedInstance,
+      instance: updatedInstance.toJSON(),
     });
   } catch (error) {
-    // Good: General error handling
-    // Add more specific logging as in my previous full example for better debugging
-    logger.error("Error updating bot instance keys/config:", {
-      error: error.message,
-      stack: error.stack,
-      botInstanceId: req.params.botInstanceId,
-      userId: req.userDB?._id,
-      body: req.body, // Be cautious logging full body if it might contain secrets in some scenarios, but for errors it's often useful
-    });
+    logger.error(
+      `[${operation}] Error updating bot instance ${req.params.botInstanceId} for User ${req.userDB?._id}:`,
+      {
+        error: error.message,
+        stack: error.stack,
+        body: req.body,
+      }
+    );
     if (error.name === "ValidationError") {
       return res
         .status(400)
         .json({ message: "Validation failed", errors: error.errors });
     }
-    // Consider more specific error messages for the user
-    res
-      .status(500)
-      .json({
-        message:
-          "Failed to update bot instance configuration. Please try again.",
+    if (error.code === 11000) {
+      // Should not happen on update unless unique index is violated somehow unexpectedly
+      logger.error(
+        `[${operation}] Unexpected E11000 error on update for BotInstance ${req.params.botInstanceId}.`,
+        error.keyValue
+      );
+      return res.status(500).json({
+        message: "An unexpected conflict occurred while saving.",
+        details: error.keyValue,
       });
+    }
+    res.status(500).json({
+      message: "Failed to update bot instance configuration. Please try again.",
+    });
   }
 };
 
-// --- PM2 Control Functions ---
+// 🔹 Get Bot Instance Configuration Details (for config page)
+exports.getBotInstanceConfigDetails = async (req, res) => {
+  const operation = "getBotInstanceConfigDetails";
+  try {
+    const { botInstanceId } = req.params;
+    const userId = req.userDB._id;
+
+    logger.info(
+      `[${operation}] Fetching details for BotInstance ${botInstanceId}, User ${userId}.`
+    );
+
+    const instance = await BotInstance.findOne({
+      _id: botInstanceId,
+      userId: userId,
+    }).select(
+      "apiKey apiSecretKey telegramId exchange active running accountType expiryDate" // Selected fields
+    );
+
+    if (!instance) {
+      logger.warn(
+        `[${operation}] BotInstance ${botInstanceId} not found for User ${userId}.`
+      );
+      return res
+        .status(404)
+        .json({ message: "Bot instance not found or permission denied." });
+    }
+
+    res.json({
+      apiKeySet: !!(instance.apiKey && instance.apiKey.trim() !== ""),
+      apiSecretSet: !!(
+        instance.apiSecretKey && instance.apiSecretKey.trim() !== ""
+      ),
+      telegramId: instance.telegramId || "",
+      exchange: instance.exchange || "",
+      active: instance.active,
+      running: instance.running,
+      accountType: instance.accountType,
+      expiryDate: instance.expiryDate
+        ? instance.expiryDate.toISOString()
+        : undefined,
+    });
+  } catch (error) {
+    logger.error(
+      `[${operation}] Error fetching bot instance config details for BotInstance ${req.params.botInstanceId}, User ${req.userDB?._id}:`,
+      { error: error.message, stack: error.stack }
+    );
+    res.status(500).json({
+      message: "Failed to retrieve bot instance configuration details.",
+    });
+  }
+};
 
 // 🔹 Start Bot Instance
 exports.startBotInstance = async (req, res) => {
+  const operation = "startBotInstance";
   if (!req.userDB || !req.userDB._id) {
-    logger.error("CONTROLLER: req.userDB._id is missing in startBotInstance!");
+    logger.error(`[${operation}] Authentication data missing.`);
     return res.status(401).json({ message: "Authentication data missing." });
   }
 
   const botInstanceId = req.params.botInstanceId;
-  const loggedInUserId = req.userDB._id; // This should be an ObjectId
-  
-  
+  const loggedInUserId = req.userDB._id;
 
   try {
-    // --- Step 1: Find instance by ID and verify ownership in one query ---
     logger.info(
-      `CONTROLLER: Attempting findOne for BotInstance. ID: ${botInstanceId}, UserID: ${loggedInUserId}`
+      `[${operation}] Attempting findOne for BotInstance. ID: ${botInstanceId}, UserID: ${loggedInUserId}`
     );
     const instance = await BotInstance.findOne({
-      _id: botInstanceId, // Mongoose handles casting string ID to ObjectId
-      userId: loggedInUserId, // Compare ObjectId from user with ObjectId in DB
+      _id: botInstanceId,
+      userId: loggedInUserId,
     });
 
-    // --- Step 2: Handle Not Found or Permission Denied ---
     if (!instance) {
-      // This now covers both cases: instance doesn't exist OR it exists but doesn't belong to this user
       logger.warn(
-        `CONTROLLER: Bot instance not found for ID: ${botInstanceId} and UserID: ${loggedInUserId}, or permission denied.`
+        `[${operation}] Bot instance ${botInstanceId} not found for User ${loggedInUserId}, or permission denied.`
       );
       return res
         .status(404)
         .json({ message: "Bot instance not found or permission denied." });
     }
     logger.info(
-      `CONTROLLER: Found instance owned by user. Instance ID: ${instance._id}, Active: ${instance.active}`
+      `[${operation}] Found instance ${instance._id} owned by user. Active: ${instance.active}, Running: ${instance.running}`
     );
 
-    // --- Step 3: Check if Active ---
     if (!instance.active) {
       logger.warn(
-        `CONTROLLER: Attempt to start inactive instance ${instance._id}`
+        `[${operation}] Attempt to start inactive instance ${instance._id}`
       );
       return res
         .status(403)
         .json({ message: "Cannot start bot: Instance is inactive." });
     }
-    logger.info(`CONTROLLER: Instance ${instance._id} is active.`);
 
-    // --- Step 4: Check Expiry Date ---
     const now = new Date();
     if (instance.expiryDate < now) {
       logger.warn(
-        `CONTROLLER: Attempt to start expired instance ${instance._id}. Expiry: ${instance.expiryDate}`
+        `[${operation}] Attempt to start expired instance ${instance._id}. Expiry: ${instance.expiryDate}`
       );
+      // Optionally deactivate the bot here if expired
+      // instance.active = false; await instance.save();
       return res.status(403).json({
-        message: `Cannot start bot: Subscription/Demo expired on ${instance.expiryDate.toISOString()}`,
+        message: `Cannot start bot: Subscription/Demo expired on ${instance.expiryDate.toLocaleDateString()}.`,
       });
     }
-    logger.info(`CONTROLLER: Instance ${instance._id} is not expired.`);
 
-    // --- Step 5: Proceed with starting the process ---
+    // CRITICAL CHECK: Ensure all necessary configurations are set
+    if (
+      !instance.apiKey ||
+      instance.apiKey.trim() === "" ||
+      !instance.apiSecretKey || // This is the encrypted secret; its presence means a secret was set.
+      instance.apiSecretKey.trim() === "" ||
+      !instance.exchange ||
+      instance.exchange.trim() === ""
+    ) {
+      logger.warn(
+        `[${operation}] Attempt to start BotInstance ${instance._id} without complete configuration (API Keys/Secret/Exchange).`
+      );
+      return res.status(400).json({
+        message:
+          "Cannot start bot: API Key, API Secret, or Exchange is not configured. Please complete the setup.",
+      });
+    }
+
+    if (instance.running) {
+      logger.info(
+        `[${operation}] Bot instance ${instance._id} is already reported as running. No action taken.`
+      );
+      // Depending on how freqtrade service manages state, you might still call startFreqtradeProcess
+      // or just return current state. For now, assume it's a no-op if already running.
+      return res.json({
+        message: "Bot is already running.",
+        instance: instance.toJSON(),
+      });
+    }
+
     logger.info(
-      `CONTROLLER: All checks passed for instance ${instance._id}. Calling startFreqtradeProcess.`
+      `[${operation}] All checks passed for instance ${instance._id}. Calling startFreqtradeProcess.`
     );
-    const result = await startFreqtradeProcess(botInstanceId); // Pass ID
+    const result = await startFreqtradeProcess(botInstanceId.toString());
 
     logger.info(
-      `CONTROLLER: Start process result for instance ${instance._id}:`,
+      `[${operation}] Start process result for instance ${instance._id}:`,
       result
     );
-    // Send the successful response from the manager
-    // Ensure result.instance exists before sending
     res.json({
       message: result.message,
-      instance: result.instance || instance,
+      instance: result.instance ? result.instance.toJSON() : instance.toJSON(),
     });
   } catch (error) {
-    // Catch errors from findOne OR startFreqtradeProcess
     const userIdForLog = req.userDB ? req.userDB._id : "UNKNOWN_USER";
     const botInstanceIdForLog = req.params.botInstanceId || "UNKNOWN_INSTANCE";
     logger.error(
-      `CONTROLLER: API Error processing start for instance ${botInstanceIdForLog} user ${userIdForLog}:`,
+      `[${operation}] API Error processing start for instance ${botInstanceIdForLog} user ${userIdForLog}:`,
       error
     );
 
     const errorMessage = error.message || "An unknown error occurred";
-    let statusCode = 500; // Default
+    let statusCode = 500;
 
-    // Check specific errors potentially thrown by startFreqtradeProcess
     if (
       errorMessage.includes("decrypt") ||
       errorMessage.includes("Configuration error") ||
       errorMessage.includes("Failed to prepare configuration") ||
       errorMessage.includes("Failed to start bot process")
     ) {
-      statusCode = 500; // Keep as internal error
+      statusCode = 500;
       logger.error(
-        `CONTROLLER: Configuration/Process start error for instance ${botInstanceIdForLog}. Error: ${errorMessage}`
+        `[${operation}] Configuration/Process start error for instance ${botInstanceIdForLog}. Error: ${errorMessage}`
       );
     }
-    // Note: inactive/expired errors are now handled BEFORE the catch block
-
     res
       .status(statusCode)
       .json({ message: `Failed to start bot instance: ${errorMessage}` });
@@ -366,105 +579,72 @@ exports.startBotInstance = async (req, res) => {
 
 // 🔹 Stop Bot Instance
 exports.stopBotInstance = async (req, res) => {
+  const operation = "stopBotInstance";
   if (!req.userDB || !req.userDB._id) {
-    logger.error("CONTROLLER: req.userDB._id is missing in stopBotInstance!");
+    logger.error(`[${operation}] Authentication data missing.`);
     return res.status(401).json({ message: "Authentication data missing." });
   }
 
   const botInstanceId = req.params.botInstanceId;
-  const loggedInUserId = req.userDB._id; // This should be an ObjectId
+  const loggedInUserId = req.userDB._id;
 
   try {
-    // --- Step 1: Find instance by ID and verify ownership in one query ---
     logger.info(
-      `CONTROLLER (STOP): Attempting findOne for BotInstance. ID: ${botInstanceId}, UserID: ${loggedInUserId}`
+      `[${operation}] Attempting findOne for BotInstance. ID: ${botInstanceId}, UserID: ${loggedInUserId}`
     );
     const instance = await BotInstance.findOne({
       _id: botInstanceId,
       userId: loggedInUserId,
     });
 
-    // --- Step 2: Handle Not Found or Permission Denied ---
     if (!instance) {
       logger.warn(
-        `CONTROLLER (STOP): Bot instance not found for ID: ${botInstanceId} and UserID: ${loggedInUserId}, or permission denied.`
+        `[${operation}] Bot instance ${botInstanceId} not found for User ${loggedInUserId}, or permission denied.`
       );
       return res
         .status(404)
         .json({ message: "Bot instance not found or permission denied." });
     }
     logger.info(
-      `CONTROLLER (STOP): Found instance owned by user. Instance ID: ${instance._id}.`
+      `[${operation}] Found instance ${instance._id} owned by user. Current running state: ${instance.running}`
     );
 
-    // --- Step 3: Proceed with stopping the process ---
+    if (!instance.running) {
+      logger.info(
+        `[${operation}] Bot instance ${instance._id} is already reported as stopped. No action taken.`
+      );
+      // Similar to start, if already stopped, can be a no-op.
+      return res.json({
+        message: "Bot is already stopped.",
+        instance: instance.toJSON(),
+      });
+    }
+
     logger.info(
-      `CONTROLLER (STOP): Calling stopFreqtradeProcess for instance ${instance._id}.`
+      `[${operation}] Calling stopFreqtradeProcess for instance ${instance._id}.`
     );
-    // Delegate (markInactive = false for user stop)
-    const result = await stopFreqtradeProcess(botInstanceId, false);
+    const result = await stopFreqtradeProcess(botInstanceId.toString(), false);
 
-    // Fetch the final state after stop for accurate response
     const updatedInstance = await BotInstance.findById(botInstanceId);
     logger.info(
-      `CONTROLLER (STOP): Stop process result for instance ${instance._id}:`,
+      `[${operation}] Stop process result for instance ${instance._id}:`,
       result
     );
     res.json({
       message: result.message,
-      instance: updatedInstance || instance,
-    }); // Return updated if possible
+      instance: updatedInstance ? updatedInstance.toJSON() : instance.toJSON(),
+    });
   } catch (error) {
     const userIdForLog = req.userDB ? req.userDB._id : "UNKNOWN_USER";
     const botInstanceIdForLog = req.params.botInstanceId || "UNKNOWN_INSTANCE";
     logger.error(
-      `CONTROLLER (STOP): API Error stopping instance ${botInstanceIdForLog} for user ${userIdForLog}:`,
+      `[${operation}] API Error stopping instance ${botInstanceIdForLog} for user ${userIdForLog}:`,
       error
     );
     res.status(500).json({
       message: `Failed to stop bot instance: ${
         error.message || "Unknown error"
       }`,
-    });
-  }
-};
-exports.getBotInstanceConfigDetails = async (req, res) => {
-  try {
-    const { botInstanceId } = req.params;
-    const userId = req.userDB._id;
-
-    const instance = await BotInstance.findOne({
-      _id: botInstanceId,
-      userId: userId,
-    }).select("apiKey apiSecretKey telegramId exchange active running"); // Select relevant fields
-
-    if (!instance) {
-      return res
-        .status(404)
-        .json({ message: "Bot instance not found or permission denied." });
-    }
-
-    res.json({
-      // Do NOT send actual keys. Just indicate if they are set.
-      apiKeySet: !!(instance.apiKey && instance.apiKey.trim() !== ""),
-      apiSecretSet: !!(
-        instance.apiSecretKey && instance.apiSecretKey.trim() !== ""
-      ), // Encrypted, so just check existence
-      telegramId: instance.telegramId || "", // Send current instance-specific telegramId
-      exchange: instance.exchange,
-      active: instance.active,
-      running: instance.running,
-      // Add any other non-sensitive fields useful for the config page
-    });
-  } catch (error) {
-    logger.error("Error fetching bot instance config details:", {
-      error: error.message,
-      stack: error.stack,
-      botInstanceId: req.params.botInstanceId,
-      userId: req.userDB?._id,
-    });
-    res.status(500).json({
-      message: "Failed to retrieve bot instance configuration details.",
     });
   }
 };

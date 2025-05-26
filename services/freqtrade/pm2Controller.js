@@ -88,6 +88,7 @@ async function startBotProcess(instanceIdStr, configPath, scriptPath) {
       absoluteConfigPath,
       "--strategy-path",
       strategyPath,
+      "-vv",
     ],
     name: processName,
     exec_mode: "fork",

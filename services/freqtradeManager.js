@@ -742,5 +742,5 @@ module.exports = {
   disconnectPm2,
   startFreqtradeProcess,
   stopFreqtradeProcess,
-  generateInstanceConfig, // Exporting this might be useful for testing/debugging
+  generateInstanceConfig,
 };
