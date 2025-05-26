@@ -1,0 +1,58 @@
+{
+  "max_open_trades": 5,
+  "stake_currency": "USDT",
+  "stake_amount": 10,
+  "pair_whitelist": [
+    "BTC/USDT",
+    "ETH/USDT",
+    "BNB/USDT",
+    "SOL/USDT",
+    "ADA/USDT"
+  ],
+  "trading_mode": "spot",
+  "margin_mode": "isolated",
+  "unfilledtimeout": {
+    "entry": 10,
+    "exit": 10,
+    "exit_timeout_count": 0,
+    "unit": "minutes"
+  },
+  "entry_pricing": {
+    "price_side": "same",
+    "use_order_book": true,
+    "order_book_top": 1,
+    "price_last_balance": 0,
+    "check_depth_of_market": {
+      "enabled": false,
+      "bids_to_ask_delta": 1
+    }
+  },
+  "exit_pricing": {
+    "price_side": "same",
+    "use_order_book": true,
+    "order_book_top": 1,
+    "price_last_balance": 0
+  },
+  "timeframe": "1m",
+  "use_exit_signal": true,
+  "pairs": ["BTC/USDT", "ETH/USDT"],
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ],
+  "trailing_stop_positive": 0.01,
+  "trailing_stop_positive_offset": 0.02,
+  "dry_run": true,
+  "exchange": {
+    "name": "binance",
+    "key": "qBOepZeyQic0ST9IbJ8wmwYkAFmsNaVs4M7qnZluO49CC3PQs8OKrE4kdaikV4pm",
+    "secret": "EiCDO5eDZOVmugaccYkMqoveDhY8XW34Nhon3rnBGMpsFeHy3xvNZBubqHd8GAJp",
+    "pair_whitelist": ["BTC/USDT"]
+  },
+  "strategy": "SmartScalpingDCA",
+  "bot_name": "ft_68032e4225631cdf286bebf5",
+  "logfile": "freqtrade_68032e4225631cdf286bebf5.log",
+  "db_url": "postgresql+psycopg2://botmoon:OnqgqNDWrOc515EUH0kJvAMoaKUagLhZ@dpg-d05n59qli9vc738vpa7g-a.singapore-postgres.render.com:5432/botmoon",
+  "user_data_dir": "C:\\Users\\Mahesh's PC\\Desktop\\Bot-Boom\\Example folder\\crypto-bot\\data\\ft_user_data\\68032e4225631cdf286bebf5"
+}
