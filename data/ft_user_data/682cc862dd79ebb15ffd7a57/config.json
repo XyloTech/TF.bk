@@ -1,0 +1,28 @@
+{
+  "max_open_trades": 3,
+  "stake_currency": "USDT",
+  "stake_amount": "unlimited",
+  "pair_whitelist": [
+    "BTC/USDT",
+    "ETH/USDT"
+  ],
+  "dry_run": true,
+  "exchange": {
+    "name": "BINANCE",
+    "key": "bUHIBS2Xl0UPR3KEbzoJmO18p5KB34zxY7ps5FqWaQpvY5NErFme0YDF6PJNDmVQ",
+    "secret": "XrxJPOSojCqrUCVUdHECn6tEJC6jOVgQmhjwZxOl46GFTANN0KNtrAVew0BPAbUu",
+    "pair_whitelist": [
+      "BTC/USDT"
+    ]
+  },
+  "strategy": "SampleEmaRsiStrategy",
+  "bot_name": "ft_682cc862dd79ebb15ffd7a57",
+  "logfile": "freqtrade_682cc862dd79ebb15ffd7a57.log",
+  "db_url": "postgresql+psycopg2://botmoon:OnqgqNDWrOc515EUH0kJvAMoaKUagLhZ@dpg-d05n59qli9vc738vpa7g-a.singapore-postgres.render.com:5432/botmoon",
+  "user_data_dir": "C:\\Users\\ia549\\OneDrive\\Desktop\\no\\botmoon-backend\\data\\ft_user_data\\682cc862dd79ebb15ffd7a57",
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ]
+}
