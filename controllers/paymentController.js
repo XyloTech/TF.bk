@@ -302,11 +302,25 @@ exports.createBotPurchasePayment = async (req, res) => {
 // 🔹 Create NowPayments Invoice for ACCOUNT RECHARGE
 exports.createRechargePayment = async (req, res) => {
   const operation = "createRechargePayment";
-  const { amount, userIdToCredit } = req.body;
+  const {
+    amount,
+    currency,
+    order_description,
+    userIdToCredit,
+    case: paymentCase,
+  } = req.body;
+  console.log("request body: ", req.body);
   const requestingUser = req.userDB;
   const targetUserId = userIdToCredit || requestingUser._id.toString();
 
+  // Optionally validate the 'case' field
+  if (paymentCase && paymentCase !== "recharge") {
+    return res.status(400).json({ message: "Invalid payment case." });
+  }
+
   const rechargeAmount = parseFloat(amount);
+  const payCurrency = (currency || "usd").toLowerCase();
+
   if (isNaN(rechargeAmount) || rechargeAmount < MIN_RECHARGE_AMOUNT) {
     logger.warn({
       operation,
@@ -323,9 +337,12 @@ exports.createRechargePayment = async (req, res) => {
 
   try {
     const referenceId = uuidv4();
-    const orderDescription = `Account Balance Recharge: ${formatCurrency(
-      rechargeAmount
-    )}`;
+    const orderDescription =
+      order_description ||
+      `Account Balance Recharge: ${formatCurrency(
+        rechargeAmount,
+        payCurrency.toUpperCase()
+      )}`;
     logger.info({
       operation,
       message: `Creating invoice for Account Recharge. User: ${targetUserId}, Amount: ${rechargeAmount}, Ref: ${referenceId}`,
@@ -333,7 +350,8 @@ exports.createRechargePayment = async (req, res) => {
 
     const nowPaymentsPayload = {
       price_amount: rechargeAmount,
-      price_currency: "usd",
+      price_currency: payCurrency,
+      pay_currency: payCurrency, // Dynamically set pay_currency based on request
       order_id: referenceId,
       order_description: orderDescription,
       ipn_callback_url: `${API_BASE_URL}/api/payments/webhook`,
@@ -361,10 +379,11 @@ exports.createRechargePayment = async (req, res) => {
       status: PAYMENT_STATUS.PENDING,
       referenceId: referenceId,
       metadata: {
-        description: "Account Balance Recharge",
+        description: orderDescription,
         invoiceId: invoice.id,
         paymentUrl: invoice.invoice_url,
         requestingUserId: requestingUser._id.toString(),
+        currency: payCurrency,
       },
     });
     await tx.save();
