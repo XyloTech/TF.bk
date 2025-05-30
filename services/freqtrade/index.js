@@ -38,13 +38,21 @@ async function startFreqtradeProcess(instanceId) {
   return { message: `Bot ${instanceId} started` };
 }
 
-async function stopFreqtradeProcess(instanceId) {
+async function stopFreqtradeProcess(instanceId, markInactive = false) {
+  // Add markInactive here
   await connectPm2();
   const processName = `freqtrade-${instanceId}`;
-  await stopProcess(processName);
-  await BotInstance.findByIdAndUpdate(instanceId, {
-    $set: { running: false },
-  });
+  await stopProcess(processName); // from pm2Controller
+
+  const updateData = { $set: { running: false } };
+  if (markInactive) {
+    updateData.$set.active = false;
+    logger.info(
+      `[FreqtradeService] Instance ${instanceId} also marked as inactive.`
+    );
+  }
+
+  await BotInstance.findByIdAndUpdate(instanceId, updateData);
   return { message: `Bot ${instanceId} stopped` };
 }
 
