@@ -64,17 +64,17 @@ exports.purchaseBot = async (req, res) => {
         botId: requestedBotId,
         accountType: "demo",
       });
-      if (existingDemo) {
-        logger.warn(
-          `[${operation}] User ${userId} already has a demo for BotID ${requestedBotId}. Instance: ${existingDemo._id}`
-        );
-        return res
-          .status(403)
-          .json({ message: "You have already used a demo for this bot." });
-      }
-      logger.info(
-        `[${operation}] No existing demo found for User: ${userId}, BotID: ${requestedBotId}. Proceeding.`
-      );
+      // if (existingDemo) {
+      //   logger.warn(
+      //     `[${operation}] User ${userId} already has a demo for BotID ${requestedBotId}. Instance: ${existingDemo._id}`
+      //   );
+      //   return res
+      //     .status(403)
+      //     .json({ message: "You have already used a demo for this bot." });
+      // }
+      // logger.info(
+      //   `[${operation}] No existing demo found for User: ${userId}, BotID: ${requestedBotId}. Proceeding.`
+      // );
     }
 
     const purchaseDate = new Date();

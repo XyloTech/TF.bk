@@ -35,7 +35,10 @@
   },
   "timeframe": "1m",
   "use_exit_signal": true,
-  "pairs": ["BTC/USDT", "ETH/USDT"],
+  "pairs": [
+    "BTC/USDT",
+    "ETH/USDT"
+  ],
   "pairlists": [
     {
       "method": "StaticPairList"
@@ -48,11 +51,13 @@
     "name": "binance",
     "key": "qBOepZeyQic0ST9IbJ8wmwYkAFmsNaVs4M7qnZluO49CC3PQs8OKrE4kdaikV4pm",
     "secret": "EiCDO5eDZOVmugaccYkMqoveDhY8XW34Nhon3rnBGMpsFeHy3xvNZBubqHd8GAJp",
-    "pair_whitelist": ["BTC/USDT"]
+    "pair_whitelist": [
+      "BTC/USDT"
+    ]
   },
   "strategy": "SmartScalpingDCA",
   "bot_name": "ft_68032e4225631cdf286bebf5",
   "logfile": "freqtrade_68032e4225631cdf286bebf5.log",
-  "db_url": "postgresql+psycopg2://botmoon:OnqgqNDWrOc515EUH0kJvAMoaKUagLhZ@dpg-d05n59qli9vc738vpa7g-a.singapore-postgres.render.com:5432/botmoon",
+  "db_url": "sqlite:///C:/Users/Mahesh's PC/Desktop/Bot-Boom/Example folder/crypto-bot/data/ft_user_data/68032e4225631cdf286bebf5/tradesv3.sqlite",
   "user_data_dir": "C:\\Users\\Mahesh's PC\\Desktop\\Bot-Boom\\Example folder\\crypto-bot\\data\\ft_user_data\\68032e4225631cdf286bebf5"
 }
