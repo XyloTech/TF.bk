@@ -350,7 +350,7 @@ exports.createRechargePayment = async (req, res) => {
 
     const nowPaymentsPayload = {
       price_amount: rechargeAmount,
-      price_currency: payCurrency,
+      price_currency: "usd",
       pay_currency: payCurrency, // Dynamically set pay_currency based on request
       order_id: referenceId,
       order_description: orderDescription,
@@ -678,6 +678,41 @@ async function _processSuccessfulPayment(tx, webhookData, user) {
     }
   }
 }
+
+exports.minimumAmount = async (req, res) => {
+  const operation = "minimumAmount";
+  try {
+    // Example: Get minimum amount from NowPayments API (replace endpoint if needed)
+    const response = await axios.get(
+      "https://api.nowpayments.io/v1/min-amount",
+      {
+        headers: {
+          "x-api-key": process.env.NOWPAYMENTS_API_KEY,
+          "Content-Type": "application/json",
+        },
+
+        params: {
+          currency_from: req.query.currency_from || "usd",
+          currency_to: req.query.currency_to || "btc",
+        },
+      }
+    );
+
+    res.status(200).json({
+      minimum_amount: response.data.min_amount,
+      currency_from: response.data.currency_from,
+      currency_to: response.data.currency_to,
+    });
+  } catch (err) {
+    logger.error({
+      operation,
+      message: "Error fetching minimum amount from NowPayments",
+      error: err.message,
+      stack: err.stack,
+    });
+    res.status(500).json({ message: "Failed to fetch minimum amount." });
+  }
+};
 
 // 🔹 Handle NowPayments Webhook (IPN - Instant Payment Notification)
 exports.nowPaymentsWebhook = async (req, res) => {
