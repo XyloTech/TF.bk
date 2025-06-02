@@ -7,6 +7,7 @@ const {
   stopFreqtradeProcess,
 } = require("../services/freqtrade");
 const logger = require("../utils/logger");
+const { sendNotification } = require("../socket");
 
 // 🔹 Purchase Bot (Handles Demo Shell Creation and Paid Bot Creation)
 exports.purchaseBot = async (req, res) => {
@@ -64,17 +65,17 @@ exports.purchaseBot = async (req, res) => {
         botId: requestedBotId,
         accountType: "demo",
       });
-      if (existingDemo) {
-        logger.warn(
-          `[${operation}] User ${userId} already has a demo for BotID ${requestedBotId}. Instance: ${existingDemo._id}`
-        );
-        return res
-          .status(403)
-          .json({ message: "You have already used a demo for this bot." });
-      }
-      logger.info(
-        `[${operation}] No existing demo found for User: ${userId}, BotID: ${requestedBotId}. Proceeding.`
-      );
+      // if (existingDemo) {
+      //   logger.warn(
+      //     `[${operation}] User ${userId} already has a demo for BotID ${requestedBotId}. Instance: ${existingDemo._id}`
+      //   );
+      //   return res
+      //     .status(403)
+      //     .json({ message: "You have already used a demo for this bot." });
+      // }
+      // logger.info(
+      //   `[${operation}] No existing demo found for User: ${userId}, BotID: ${requestedBotId}. Proceeding.`
+      // );
     }
 
     const purchaseDate = new Date();
@@ -463,6 +464,7 @@ exports.startBotInstance = async (req, res) => {
 
   const botInstanceId = req.params.botInstanceId;
   const loggedInUserId = req.userDB._id;
+  let fetchedInstanceForNotification;
 
   try {
     logger.info(
@@ -471,7 +473,7 @@ exports.startBotInstance = async (req, res) => {
     const instance = await BotInstance.findOne({
       _id: botInstanceId,
       userId: loggedInUserId,
-    });
+    }).populate("botId", "name"); // Populate bot name for notifications
 
     if (!instance) {
       logger.warn(
@@ -485,10 +487,34 @@ exports.startBotInstance = async (req, res) => {
       `[${operation}] Found instance ${instance._id} owned by user. Active: ${instance.active}, Running: ${instance.running}`
     );
 
+    sendNotification(loggedInUserId.toString(), "bot_status_update", {
+      // `type` argument
+      // `message` argument (this is the object that frontend receives as `payload.message`)
+      instanceId: instance._id.toString(),
+      status: "STARTING",
+      running: instance.running, // Send current DB running state (likely false)
+      botName:
+        instance.botId?.name || `Bot ${instance._id.toString().slice(-6)}`,
+      message: `Bot "${
+        instance.botId?.name || instance._id.toString().slice(-6)
+      }" is initializing...`,
+    });
+
     if (!instance.active) {
       logger.warn(
         `[${operation}] Attempt to start inactive instance ${instance._id}`
       );
+      // Send failure notification
+      sendNotification(loggedInUserId.toString(), "bot_status_update", {
+        instanceId: instance._id.toString(),
+        status: "ERROR_STARTING",
+        running: false,
+        botName:
+          instance.botId?.name || `Bot ${instance._id.toString().slice(-6)}`,
+        message: `Cannot start "${
+          instance.botId?.name || "Bot"
+        }": Instance is inactive.`,
+      });
       return res
         .status(403)
         .json({ message: "Cannot start bot: Instance is inactive." });
@@ -501,6 +527,16 @@ exports.startBotInstance = async (req, res) => {
       );
       // Optionally deactivate the bot here if expired
       // instance.active = false; await instance.save();
+      sendNotification(loggedInUserId.toString(), "bot_status_update", {
+        instanceId: instance._id.toString(),
+        status: "ERROR_STARTING",
+        running: false,
+        botName:
+          instance.botId?.name || `Bot ${instance._id.toString().slice(-6)}`,
+        message: `Cannot start "${
+          instance.botId?.name || "Bot"
+        }": Subscription/Demo expired on ${instance.expiryDate.toLocaleDateString()}.`,
+      });
       return res.status(403).json({
         message: `Cannot start bot: Subscription/Demo expired on ${instance.expiryDate.toLocaleDateString()}.`,
       });
@@ -518,59 +554,130 @@ exports.startBotInstance = async (req, res) => {
       logger.warn(
         `[${operation}] Attempt to start BotInstance ${instance._id} without complete configuration (API Keys/Secret/Exchange).`
       );
+      sendNotification(loggedInUserId.toString(), "bot_status_update", {
+        instanceId: instance._id.toString(),
+        status: "ERROR_STARTING",
+        running: false,
+        botName:
+          instance.botId?.name || `Bot ${instance._id.toString().slice(-6)}`,
+        message: `Cannot start "${
+          instance.botId?.name || "Bot"
+        }": API Key, Secret, or Exchange is not configured.`,
+      });
       return res.status(400).json({
         message:
           "Cannot start bot: API Key, API Secret, or Exchange is not configured. Please complete the setup.",
       });
     }
 
+    // The startFreqtradeProcess from freqtradeManager.js handles the case where a PM2 process might exist
+    // and attempts to stop/delete it for a clean start. It also updates the DB if it finds
+    // a PM2 process running but the DB says it's not.
     if (instance.running) {
       logger.info(
-        `[${operation}] Bot instance ${instance._id} is already reported as running. No action taken.`
+        `[${operation}] Instance ${instance._id} is marked as running in DB. startFreqtradeProcess will attempt restart.`
       );
-      // Depending on how freqtrade service manages state, you might still call startFreqtradeProcess
-      // or just return current state. For now, assume it's a no-op if already running.
-      return res.json({
-        message: "Bot is already running.",
-        instance: instance.toJSON(),
-      });
+      // No need to send "ALREADY_RUNNING_DB" here, as startFreqtradeProcess will handle it.
+      // The "STARTING" notification above already covers the user's intent.
     }
 
     logger.info(
       `[${operation}] All checks passed for instance ${instance._id}. Calling startFreqtradeProcess.`
     );
+    // `startFreqtradeProcess` from freqtradeManager.js returns { message, instance (updated instance from DB) }
     const result = await startFreqtradeProcess(botInstanceId.toString());
 
     logger.info(
       `[${operation}] Start process result for instance ${instance._id}:`,
       result
     );
+
+    // `result.instance` is the bot instance *after* `startFreqtradeProcess` has updated its `running` status in DB
+    // and confirmed PM2 is 'online'.
+    const finalInstanceData =
+      result.instance || // This is already populated with botId.name from freqtradeManager
+      (await BotInstance.findById(botInstanceId).populate("botId", "name")); // Fallback if result.instance is missing
+
+    if (finalInstanceData && finalInstanceData.running) {
+      sendNotification(loggedInUserId.toString(), "bot_status_update", {
+        instanceId: finalInstanceData._id.toString(),
+        status: "RUNNING", // This means PM2 confirmed 'online'
+        running: true,
+        botName:
+          finalInstanceData.botId?.name ||
+          `Bot ${finalInstanceData._id.toString().slice(-6)}`,
+        message:
+          result.message ||
+          `Bot "${
+            finalInstanceData.botId?.name || "Bot"
+          }" started successfully and is now live.`,
+      });
+    } else {
+      // This implies startFreqtradeProcess itself determined a failure (e.g., PM2 did not go online, or config error)
+      sendNotification(loggedInUserId.toString(), "bot_status_update", {
+        instanceId: finalInstanceData?._id.toString() || botInstanceId,
+        status: "ERROR_CONFIRMING_START",
+        running: false,
+        botName:
+          finalInstanceData?.botId?.name ||
+          `Bot ${(finalInstanceData?._id || botInstanceId)
+            .toString()
+            .slice(-6)}`,
+        message:
+          result?.message ||
+          `Bot "${
+            finalInstanceData?.botId?.name || "Bot"
+          }" initiated but did not confirm as running. Please check logs.`,
+      });
+    }
+
     res.json({
       message: result.message,
-      instance: result.instance ? result.instance.toJSON() : instance.toJSON(),
+      instance: finalInstanceData
+        ? finalInstanceData.toJSON()
+        : instance.toJSON(), // Use the potentially updated instance from result
     });
   } catch (error) {
-    const userIdForLog = req.userDB ? req.userDB._id : "UNKNOWN_USER";
+    const userIdForLog = req.userDB
+      ? req.userDB._id.toString()
+      : "UNKNOWN_USER";
     const botInstanceIdForLog = req.params.botInstanceId || "UNKNOWN_INSTANCE";
     logger.error(
       `[${operation}] API Error processing start for instance ${botInstanceIdForLog} user ${userIdForLog}:`,
       error
     );
 
-    const errorMessage = error.message || "An unknown error occurred";
-    let statusCode = 500;
+    const botNameForError =
+      fetchedInstanceForNotification?.botId?.name ||
+      `Bot ${botInstanceIdForLog.slice(-6)}`;
+    sendNotification(userIdForLog, "bot_status_update", {
+      instanceId: botInstanceIdForLog,
+      status: "ERROR_STARTING",
+      running: false,
+      botName: botNameForError,
+      message: `Failed to start "${botNameForError}": ${error.message}`,
+    });
 
+    const errorMessage = error.message || "An unknown error occurred";
+    let statusCode = 500; // Default to 500
     if (
-      errorMessage.includes("decrypt") ||
-      errorMessage.includes("Configuration error") ||
-      errorMessage.includes("Failed to prepare configuration") ||
-      errorMessage.includes("Failed to start bot process")
+      error.message.includes("Instance is inactive") ||
+      error.message.includes("Subscription/Demo expired")
     ) {
-      statusCode = 500;
-      logger.error(
-        `[${operation}] Configuration/Process start error for instance ${botInstanceIdForLog}. Error: ${errorMessage}`
-      );
+      statusCode = 403;
+    } else if (
+      error.message.includes("not configured") ||
+      error.message.includes("Failed to prepare configuration")
+    ) {
+      statusCode = 400;
+    } else if (
+      error.message.includes("PM2 failed to start process") ||
+      error.message.includes("decrypt API secret")
+    ) {
+      statusCode = 500; // Internal server / setup issues
     }
+    // Add more specific status codes based on error messages if needed
+
     res
       .status(statusCode)
       .json({ message: `Failed to start bot instance: ${errorMessage}` });
@@ -587,6 +694,7 @@ exports.stopBotInstance = async (req, res) => {
 
   const botInstanceId = req.params.botInstanceId;
   const loggedInUserId = req.userDB._id;
+  let fetchedInstanceForNotification;
 
   try {
     logger.info(
@@ -595,7 +703,7 @@ exports.stopBotInstance = async (req, res) => {
     const instance = await BotInstance.findOne({
       _id: botInstanceId,
       userId: loggedInUserId,
-    });
+    }).populate("botId", "name");
 
     if (!instance) {
       logger.warn(
@@ -613,34 +721,88 @@ exports.stopBotInstance = async (req, res) => {
       logger.info(
         `[${operation}] Bot instance ${instance._id} is already reported as stopped. No action taken.`
       );
-      // Similar to start, if already stopped, can be a no-op.
+      sendNotification(loggedInUserId.toString(), "bot_status_update", {
+        instanceId: instance._id.toString(),
+        status: "ALREADY_STOPPED_DB",
+        running: false,
+        botName:
+          instance.botId?.name || `Bot ${instance._id.toString().slice(-6)}`,
+        message: `Bot "${
+          instance.botId?.name || instance._id.toString().slice(-6)
+        }" is already stopped.`,
+      });
       return res.json({
         message: "Bot is already stopped.",
         instance: instance.toJSON(),
       });
     }
 
-    logger.info(
-      `[${operation}] Calling stopFreqtradeProcess for instance ${instance._id}.`
-    );
-    const result = await stopFreqtradeProcess(botInstanceId.toString(), false);
+    // --- Initial "STOPPING" notification ---
+    sendNotification(loggedInUserId.toString(), "bot_status_update", {
+      instanceId: instance._id.toString(),
+      status: "STOPPING",
+      running: instance.running, // Should be true here
+      botName:
+        instance.botId?.name || `Bot ${instance._id.toString().slice(-6)}`,
+      message: `Bot "${
+        instance.botId?.name || instance._id.toString().slice(-6)
+      }" is being stopped...`,
+    });
+    // -----------------------------------------
 
-    const updatedInstance = await BotInstance.findById(botInstanceId);
+    // `stopFreqtradeProcess` from freqtradeManager.js returns { message }
+    // It also updates the BotInstance DB record internally.
+    const result = await stopFreqtradeProcess(botInstanceId.toString(), false); // false for markInactive
+
+    // Fetch the instance again to get the absolute latest state after stopProcess updated it.
+    const updatedInstance = await BotInstance.findById(botInstanceId).populate(
+      "botId",
+      "name"
+    );
     logger.info(
       `[${operation}] Stop process result for instance ${instance._id}:`,
       result
     );
+
+    sendNotification(loggedInUserId.toString(), "bot_status_update", {
+      instanceId: updatedInstance._id.toString(),
+      status: "STOPPED",
+      running: false, // Should be false now
+      botName:
+        updatedInstance.botId?.name ||
+        `Bot ${updatedInstance._id.toString().slice(-6)}`,
+      message:
+        result.message ||
+        `Bot "${updatedInstance.botId?.name || "Bot"}" stopped successfully.`,
+    });
+
     res.json({
       message: result.message,
-      instance: updatedInstance ? updatedInstance.toJSON() : instance.toJSON(),
+      instance: updatedInstance ? updatedInstance.toJSON() : instance.toJSON(), // Use updatedInstance
     });
   } catch (error) {
-    const userIdForLog = req.userDB ? req.userDB._id : "UNKNOWN_USER";
+    const userIdForLog = req.userDB
+      ? req.userDB._id.toString()
+      : "UNKNOWN_USER";
     const botInstanceIdForLog = req.params.botInstanceId || "UNKNOWN_INSTANCE";
     logger.error(
       `[${operation}] API Error stopping instance ${botInstanceIdForLog} for user ${userIdForLog}:`,
       error
     );
+    const botNameForError =
+      fetchedInstanceForNotification?.botId?.name ||
+      `Bot ${botInstanceIdForLog.slice(-6)}`;
+
+    sendNotification(userIdForLog, "bot_status_update", {
+      instanceId: botInstanceIdForLog,
+      status: "ERROR_STOPPING",
+      running:
+        fetchedInstanceForNotification?.running !== undefined
+          ? fetchedInstanceForNotification.running
+          : true, // Optimistically assume it might still be running if stop failed
+      botName: botNameForError,
+      message: `Failed to stop "${botNameForError}": ${error.message}`,
+    });
     res.status(500).json({
       message: `Failed to stop bot instance: ${
         error.message || "Unknown error"
