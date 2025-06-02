@@ -1,3 +1,28 @@
+// const mongoose = require("mongoose");
+
+// const ReferralSchema = new mongoose.Schema(
+//   {
+//     referrerId: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: "User",
+//       required: true,
+//     },
+//     referredId: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: "User",
+//       required: true,
+//     },
+//     purchaseMade: { type: Boolean, default: false },
+//     commissionEarned: { type: Number, default: 0.0 },
+//   },
+//   { timestamps: true }
+// );
+
+// // 🔹 Foreign key indexes
+// ReferralSchema.index({ referrerId: 1, referredId: 1 });
+
+// module.exports = mongoose.model("Referral", ReferralSchema);
+
 const mongoose = require("mongoose");
 
 const ReferralSchema = new mongoose.Schema(
@@ -12,8 +37,19 @@ const ReferralSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    purchaseMade: { type: Boolean, default: false },
-    commissionEarned: { type: Number, default: 0.0 },
+    status: {
+      type: String,
+      enum: ["PENDING", "COMPLETED", "CANCELLED"],
+      default: "PENDING",
+    },
+    commissionAmount: {
+      type: Number,
+      default: 2,
+    },
+    completedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
