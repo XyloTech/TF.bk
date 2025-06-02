@@ -89,9 +89,14 @@ BotInstanceSchema.set("toJSON", {
 BotInstanceSchema.index({ userId: 1, createdAt: -1 });
 BotInstanceSchema.index({ accountType: 1, active: 1, expiryDate: 1 });
 BotInstanceSchema.index({ running: 1 });
+// --- MODIFICATION FOR TESTING ---
+// Comment out the unique index for demo accounts to allow multiple demos per user/bot for testing
+/*
 BotInstanceSchema.index(
   { userId: 1, botId: 1, accountType: 1 },
   { unique: true, partialFilterExpression: { accountType: "demo" } }
 ); // Ensures only one demo per user per bot template
+*/
+// --- END OF MODIFICATION ---
 
 module.exports = mongoose.model("BotInstance", BotInstanceSchema);
