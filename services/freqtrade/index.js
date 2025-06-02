@@ -10,7 +10,7 @@ const { generateInstanceConfig } = require("./configBuilder");
 const BotInstance = require("../../models/BotInstance");
 const logger = require("../../utils/logger");
 const path = require("path");
-// Start & Stop handlers
+const manager = require("../freqtradeManager");
 
 async function startFreqtradeProcess(instanceId) {
   await connectPm2();
@@ -61,4 +61,6 @@ module.exports = {
   stopFreqtradeProcess,
   connectPm2,
   disconnectPm2,
+  generateInstanceConfig: manager.generateInstanceConfig,
 };
+logger.info("[FreqtradeService Index] Now delegating to freqtradeManager.js");
