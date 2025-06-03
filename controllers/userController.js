@@ -67,6 +67,7 @@ exports.completeRegistration = async (req, res) => {
   const userId = req.userDB._id;
   const userEmail = req.userDB.email;
   const { referralCode } = req.body; // Frontend needs to send this if available { "referralCode": "ABC123XYZ" }
+  console.log("completeRegistration called with referralCode:", referralCode);
 
   try {
     const user = req.userDB; // User already fetched by auth middleware
@@ -99,6 +100,9 @@ exports.completeRegistration = async (req, res) => {
       referrerUser = await User.findOne({ referralCode: cleanReferralCode });
 
       if (referrerUser) {
+        console.log(
+          `self Referrer found: ${referrerUser._id} (${referrerUser.email})`
+        );
         // Prevent self-referral
         if (referrerUser._id.toString() === userId.toString()) {
           logger.warn({
@@ -121,8 +125,10 @@ exports.completeRegistration = async (req, res) => {
             const newReferral = new Referral({
               referrerId: referrerUser._id,
               referredId: userId,
-              purchaseMade: false, // Default
-              commissionEarned: 0, // Default
+              // status: "PENDING",
+              // purchaseMade: false, // Default
+              // commissionEarned: 2, // Default
+              // completedAt: null, // Default
             });
             await newReferral.save();
             logger.info({
