@@ -204,17 +204,45 @@ exports.getMyReferralInfo = async (req, res) => {
     }
 
     // Optionally fetch aggregate stats
+    // const referralStats = await Referral.aggregate([
+    //   { $match: { referrerId: userId } }, // Match referrals made BY this user
+    //   {
+    //     $group: {
+    //       _id: null, // Group all referrals for this user
+    //       totalReferrals: { $sum: 1 },
+    //       successfulReferrals: { $sum: { $cond: ["$purchaseMade", 1, 0] } }, // Count referrals where purchase was made
+    //       totalCommission: { $sum: "$commissionAmount" },
+    //     },
+    //   },
+    // ]);
     const referralStats = await Referral.aggregate([
-      { $match: { referrerId: userId } }, // Match referrals made BY this user
+      {
+        $match: {
+          referrerId: userId, // Match referrals made by this user
+        },
+      },
       {
         $group: {
-          _id: null, // Group all referrals for this user
-          totalReferrals: { $sum: 1 },
-          successfulReferrals: { $sum: { $cond: ["$purchaseMade", 1, 0] } }, // Count referrals where purchase was made
-          totalCommission: { $sum: "$commissionEarned" },
+          _id: null,
+          totalReferrals: { $sum: 1 }, // Count all referrals
+          successfulReferrals: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "COMPLETED"] }, 1, 0],
+            },
+          },
+          totalCommissionEarned: {
+            $sum: {
+              $cond: [
+                { $eq: ["$status", "COMPLETED"] },
+                "$commissionAmount",
+                0,
+              ],
+            },
+          },
         },
       },
     ]);
+    console.log("referralStats:", referralStats);
 
     res.json({
       success: true,
