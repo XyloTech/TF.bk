@@ -682,7 +682,6 @@ async function _processSuccessfulPayment(tx, webhookData, user) {
 exports.minimumAmount = async (req, res) => {
   const operation = "minimumAmount";
   try {
-    // Example: Get minimum amount from NowPayments API (replace endpoint if needed)
     const response = await axios.get(
       "https://api.nowpayments.io/v1/min-amount",
       {
@@ -690,18 +689,21 @@ exports.minimumAmount = async (req, res) => {
           "x-api-key": process.env.NOWPAYMENTS_API_KEY,
           "Content-Type": "application/json",
         },
-
         params: {
-          currency_from: req.query.currency_from || "usd",
-          currency_to: req.query.currency_to || "btc",
+          currency_from: req.query.currency_from || "btc",
+          currency_to: "usd",
+          fiat_equivalent: "usd",
+          is_fee_paid_by_user: "False",
         },
       }
     );
 
+    // Return all relevant fields as received from NowPayments
     res.status(200).json({
-      minimum_amount: response.data.min_amount,
       currency_from: response.data.currency_from,
       currency_to: response.data.currency_to,
+      min_amount: response.data.min_amount,
+      fiat_equivalent: response.data.fiat_equivalent,
     });
   } catch (err) {
     logger.error({

@@ -27,7 +27,7 @@ router.post(
   createRechargePayment
 );
 
-router.post("/minimum-amount", authenticateUser, express.json(), minimumAmount);
+router.get("/minimum-amount", authenticateUser, express.json(), minimumAmount);
 
 // POST /api/payments/webhook - NowPayments sends status updates (Needs RAW body for signature check)
 // Apply express.raw() BEFORE the controller handles it.
