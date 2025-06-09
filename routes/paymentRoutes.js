@@ -6,6 +6,10 @@ const {
   nowPaymentsWebhook,
   getPaymentStatus,
   minimumAmount,
+  validateAddress,
+  withdrawalFee,
+  estimatedPrice,
+  createPayout,
 } = require("../controllers/paymentController"); // Adjust path
 const authenticateUser = require("../middleware/authMiddleware"); // Adjust path
 
@@ -39,5 +43,21 @@ router.post(
 
 // GET /api/payments/status?ref=... - User checks status
 router.get("/status", authenticateUser, getPaymentStatus);
+router.post("/validate-address", authenticateUser, validateAddress);
+
+// --- Withdrawal Fee Endpoint ---
+router.get("/withdrawal-fee", authenticateUser, express.json(), withdrawalFee);
+
+// --- Estimated Price Endpoint ---
+router.get(
+  "/estimated-price",
+  authenticateUser,
+  express.json(),
+  estimatedPrice
+);
+
+router.post("/create-payout", authenticateUser, express.json(), createPayout);
+// router.post("/payout-webhook", payoutWebhook); // No auth middleware for webhooks
+module.exports = router; // router.post("/payout-webhook", payoutWebhook); // No auth middleware for webhooks
 
 module.exports = router;

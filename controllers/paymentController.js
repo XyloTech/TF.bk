@@ -17,6 +17,7 @@ const { sendNotification } = require("../socket");
 const TRANSACTION_TYPES = {
   BOT_PURCHASE: "bot_purchase",
   BALANCE_RECHARGE: "balance_recharge",
+  PAYOUT: "payout",
   // Add other types from your Transaction model enum if needed elsewhere in this controller
 };
 
@@ -35,6 +36,13 @@ const NOWPAYMENTS_STATUS = {
   REFUNDED: "refunded",
   EXPIRED: "expired",
   // Add any other statuses NowPayments might send
+};
+const PAYOUT_STATUS = {
+  WAITING: "WAITING",
+  PROCESSING: "PROCESSING",
+  SENT: "SENT",
+  FAILED: "FAILED",
+  CANCELLED: "CANCELLED",
 };
 
 // --- Environment Variable Checks & Configuration ---
@@ -144,6 +152,111 @@ function verifyNowPaymentsSignature(rawBody, signatureHeader, secret) {
     return false;
   }
 }
+
+// ! --------------------------------------------------------------------------
+
+exports.validateAddress = async (req, res) => {
+  const operation = "validateAddress";
+  const { address, currency } = req.body;
+  const requestingUser = req.userDB;
+  console.log("validateAddress request body: ", req.body);
+
+  // Input validation
+  if (!address || !currency) {
+    logger.warn({
+      operation,
+      message: "Missing required fields: address or currency",
+      userId: requestingUser._id,
+      providedData: { address: !!address, currency: !!currency },
+    });
+    return res.status(400).json({
+      message: "Address and currency are required fields.",
+    });
+  }
+
+  if (typeof address !== "string" || typeof currency !== "string") {
+    logger.warn({
+      operation,
+      message: "Invalid data types for address or currency",
+      userId: requestingUser._id,
+    });
+    return res.status(400).json({
+      message: "Address and currency must be strings.",
+    });
+  }
+
+  try {
+    logger.info({
+      operation,
+      message: `Validating address for user ${requestingUser._id}`,
+      currency,
+      address: address.substring(0, 10) + "...", // Log partial address for privacy
+    });
+
+    const nowPaymentsPayload = {
+      address: address.trim(),
+      currency: currency.toLowerCase().trim(),
+      extra_id: null,
+    };
+
+    const nowRes = await axios.post(
+      "https://api.nowpayments.io/v1/payout/validate-address",
+      nowPaymentsPayload,
+      {
+        headers: {
+          "x-api-key": process.env.NOWPAYMENTS_API_KEY,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    logger.info({
+      operation,
+      message: "Address validation successful",
+      userId: requestingUser._id,
+      currency,
+      isValid: nowRes.data.status || nowRes.status === 200,
+    });
+
+    res.status(200).json({
+      valid: nowRes.data.status !== false,
+      currency: currency.toLowerCase(),
+      address: address,
+      extra_id: null,
+      nowpayments_response: nowRes.data,
+    });
+  } catch (err) {
+    const errMsg = err.response?.data?.message || err.message;
+    const statusCode = err.response?.status || 500;
+
+    logger.error({
+      operation,
+      message: "Address validation error",
+      error: errMsg,
+      statusCode,
+      errorFull: err.response?.data || err,
+      userId: requestingUser._id,
+      currency,
+    });
+
+    // If it's a validation error from NowPayments (400), return structured response
+    if (statusCode === 400) {
+      return res.status(200).json({
+        valid: false,
+        currency: currency.toLowerCase(),
+        address: address,
+        extra_id: null,
+        error: errMsg,
+        nowpayments_response: err.response?.data,
+      });
+    }
+
+    res.status(statusCode >= 400 && statusCode < 500 ? statusCode : 500).json({
+      message: errMsg || "Failed to validate address. Please try again later.",
+    });
+  }
+};
+// ! --------------------------------------------------------------------------
 
 // 🔹 Create NowPayments Invoice for BOT PURCHASE
 exports.createBotPurchasePayment = async (req, res) => {
@@ -1002,3 +1115,233 @@ exports.getPaymentStatus = async (req, res) => {
 };
 const mongoose = require("mongoose");
 const ObjectId = mongoose.Types.ObjectId;
+
+// --- Withdrawal Fee Endpoint ---
+exports.withdrawalFee = async (req, res) => {
+  const operation = "withdrawalFee";
+  const { currency, amount } = req.query;
+
+  if (!currency || !amount) {
+    return res
+      .status(400)
+      .json({ message: "currency and amount are required query parameters." });
+  }
+
+  try {
+    const response = await axios.get(
+      "https://api.nowpayments.io/v1/payout/fee",
+      {
+        headers: {
+          "x-api-key": process.env.NOWPAYMENTS_API_KEY,
+        },
+        params: {
+          currency,
+          amount,
+        },
+      }
+    );
+
+    res.status(200).json({
+      currency: response.data.currency,
+      fee: response.data.fee,
+    });
+  } catch (err) {
+    logger.error({
+      operation,
+      message: "Error fetching withdrawal fee from NowPayments",
+      error: err.message,
+      stack: err.stack,
+    });
+    res.status(500).json({ message: "Failed to fetch withdrawal fee." });
+  }
+};
+
+// 🔹 Estimate Conversion Price
+exports.estimatedPrice = async (req, res) => {
+  const operation = "estimatedPrice";
+  const { amount, currency_from, currency_to } = req.query;
+
+  if (!amount || !currency_from || !currency_to) {
+    return res.status(400).json({
+      message:
+        "amount, currency_from, and currency_to are required query parameters.",
+    });
+  }
+
+  try {
+    const response = await axios.get("https://api.nowpayments.io/v1/estimate", {
+      headers: {
+        "x-api-key": process.env.NOWPAYMENTS_API_KEY,
+      },
+      params: {
+        amount,
+        currency_from,
+        currency_to,
+      },
+    });
+
+    res.status(200).json({
+      currency_from: response.data.currency_from,
+      amount_from: response.data.amount_from,
+      currency_to: response.data.currency_to,
+      estimated_amount: response.data.estimated_amount,
+    });
+  } catch (err) {
+    logger.error({
+      operation,
+      message: "Error fetching estimated price from NowPayments",
+      error: err.message,
+      stack: err.stack,
+    });
+    res.status(500).json({ message: "Failed to fetch estimated price." });
+  }
+};
+
+exports.createPayout = async (req, res) => {
+  const operation = "createPayout";
+  const { withdrawals, ipn_callback_url } = req.body;
+  const requestingUser = req.userDB;
+
+  // Input validation
+  if (!withdrawals || !Array.isArray(withdrawals) || withdrawals.length === 0) {
+    logger.warn({
+      operation,
+      message: "Invalid or missing withdrawals array",
+      userId: requestingUser._id,
+    });
+    return res.status(400).json({
+      message:
+        "Withdrawals array is required and must contain at least one withdrawal.",
+    });
+  }
+
+  // Validate each withdrawal
+  const totalAmount = withdrawals.reduce((sum, withdrawal, index) => {
+    if (!withdrawal.address || !withdrawal.currency || !withdrawal.amount) {
+      throw new Error(
+        `Withdrawal ${index + 1}: address, currency, and amount are required.`
+      );
+    }
+    if (typeof withdrawal.amount !== "number" || withdrawal.amount <= 0) {
+      throw new Error(
+        `Withdrawal ${index + 1}: amount must be a positive number.`
+      );
+    }
+    return sum + withdrawal.amount;
+  }, 0);
+
+  try {
+    // Check if user has sufficient balance for total payout amount
+    // Note: You might want to implement currency conversion here if needed
+    const userBalance = requestingUser.accountBalance || 0;
+
+    logger.info({
+      operation,
+      message: `Creating payout for user ${requestingUser._id}`,
+      withdrawalCount: withdrawals.length,
+      totalAmount,
+      userBalance,
+    });
+
+    // Create reference ID for tracking
+    const referenceId = uuidv4();
+    const callbackUrl =
+      ipn_callback_url || `${API_BASE_URL}/api/payments/payout-webhook`;
+
+    const nowPaymentsPayload = {
+      ipn_callback_url: callbackUrl,
+      withdrawals: withdrawals.map((w) => ({
+        address: w.address.trim(),
+        currency: w.currency.toLowerCase().trim(),
+        amount: w.amount,
+        ipn_callback_url: w.ipn_callback_url || callbackUrl,
+        extra_id: w.extra_id || null,
+        payout_description:
+          w.payout_description || `Payout for user ${requestingUser._id}`,
+        unique_external_id:
+          w.unique_external_id || `${referenceId}-${Date.now()}`,
+      })),
+    };
+
+    const nowRes = await axios.post(
+      "https://api.nowpayments.io/v1/payout",
+      nowPaymentsPayload,
+      {
+        headers: {
+          // Authorization: `Bearer ${process.env.NOWPAYMENTS_BEARER_TOKEN}`, // You'll need to add this env var
+          "x-api-key": process.env.NOWPAYMENTS_API_KEY,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const payoutResponse = nowRes.data;
+
+    // Create transaction records for each withdrawal
+    const transactionPromises = payoutResponse.withdrawals.map(
+      async (withdrawal, index) => {
+        const tx = new Transaction({
+          userId: requestingUser._id,
+          amount: parseFloat(withdrawal.amount),
+          transactionType: TRANSACTION_TYPES.PAYOUT,
+          paymentMethod: "crypto",
+          status: PAYMENT_STATUS.PENDING,
+          referenceId: `${referenceId}-${index}`,
+          metadata: {
+            payoutBatchId: payoutResponse.id,
+            payoutId: withdrawal.id,
+            currency: withdrawal.currency,
+            address: withdrawal.address,
+            extraId: withdrawal.extra_id,
+            payoutStatus: withdrawal.status,
+            payoutDescription: withdrawal.payout_description,
+            uniqueExternalId: withdrawal.unique_external_id,
+            ipnCallbackUrl: withdrawal.ipn_callback_url,
+            requestingUserId: requestingUser._id.toString(),
+            createdAt: withdrawal.created_at || withdrawal.createdAt,
+          },
+        });
+        return tx.save();
+      }
+    );
+
+    await Promise.all(transactionPromises);
+
+    logger.info({
+      operation,
+      message: `Payout batch ${payoutResponse.id} created successfully`,
+      userId: requestingUser._id,
+      batchId: payoutResponse.id,
+      withdrawalCount: payoutResponse.withdrawals.length,
+    });
+
+    res.status(200).json({
+      success: true,
+      batchId: payoutResponse.id,
+      referenceId: referenceId,
+      withdrawals: payoutResponse.withdrawals.map((w) => ({
+        id: w.id,
+        address: w.address,
+        currency: w.currency,
+        amount: w.amount,
+        status: w.status,
+        created_at: w.created_at || w.createdAt,
+      })),
+    });
+  } catch (err) {
+    const errMsg = err.response?.data?.message || err.message;
+
+    logger.error({
+      operation,
+      message: "Payout creation error",
+      error: errMsg,
+      errorFull: err.response?.data || err,
+      stack: err.stack,
+      userId: requestingUser._id,
+    });
+
+    res.status(500).json({
+      message: errMsg || "Failed to create payout. Please try again later.",
+    });
+  }
+};
