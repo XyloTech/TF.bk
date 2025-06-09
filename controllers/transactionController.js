@@ -41,3 +41,39 @@ exports.createTransaction = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// 🔹 Get User Recharge Amount (Total Recharge - Withdrawals)
+exports.rechargeAmount = async (req, res) => {
+  try {
+    const userId = req.userDB._id;
+
+    // Fetch all approved balance_recharge and withdrawal transactions for the user
+    const transactions = await Transaction.find({
+      userId,
+      status: "approved",
+      transactionType: { $in: ["balance_recharge", "withdrawal"] },
+    });
+
+    // Calculate total: sum of balance_recharge minus sum of withdrawal
+    let totalRecharge = 0;
+    let totalWithdrawal = 0;
+
+    transactions.forEach((tx) => {
+      if (tx.transactionType === "balance_recharge") {
+        totalRecharge += tx.amount;
+      } else if (tx.transactionType === "withdrawal") {
+        totalWithdrawal += tx.amount;
+      }
+    });
+
+    const netRecharge = totalRecharge - totalWithdrawal;
+
+    res.json({
+      total_recharge: totalRecharge,
+      total_withdrawal: totalWithdrawal,
+      net_recharge: netRecharge,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
