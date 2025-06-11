@@ -1197,6 +1197,33 @@ exports.estimatedPrice = async (req, res) => {
   }
 };
 
+// Helper to fetch NowPayments Bearer Token
+async function getNowPaymentsBearerToken() {
+  try {
+    const response = await axios.post(
+      "https://api.nowpayments.io/v1/auth",
+      {
+        email: process.env.NOWPAYMENTS_EMAIL,
+        password: process.env.NOWPAYMENTS_PASSWORD,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    return response.data.token;
+  } catch (err) {
+    logger.error({
+      operation: "getNowPaymentsBearerToken",
+      message: "Failed to fetch NowPayments Bearer token",
+      error: err.message,
+      stack: err.stack,
+    });
+    throw new Error("Failed to fetch NowPayments Bearer token");
+  }
+}
+
 exports.createPayout = async (req, res) => {
   const operation = "createPayout";
   const { withdrawals, ipn_callback_url } = req.body;
@@ -1232,7 +1259,6 @@ exports.createPayout = async (req, res) => {
 
   try {
     // Check if user has sufficient balance for total payout amount
-    // Note: You might want to implement currency conversion here if needed
     const userBalance = requestingUser.accountBalance || 0;
 
     logger.info({
@@ -1242,6 +1268,9 @@ exports.createPayout = async (req, res) => {
       totalAmount,
       userBalance,
     });
+
+    // Fetch Bearer token dynamically
+    const bearerToken = await getNowPaymentsBearerToken();
 
     // Create reference ID for tracking
     const referenceId = uuidv4();
@@ -1268,7 +1297,7 @@ exports.createPayout = async (req, res) => {
       nowPaymentsPayload,
       {
         headers: {
-          // Authorization: `Bearer ${process.env.NOWPAYMENTS_BEARER_TOKEN}`, // You'll need to add this env var
+          Authorization: `Bearer ${bearerToken}`,
           "x-api-key": process.env.NOWPAYMENTS_API_KEY,
           "Content-Type": "application/json",
         },
