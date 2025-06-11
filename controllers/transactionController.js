@@ -47,19 +47,24 @@ exports.rechargeAmount = async (req, res) => {
   try {
     const userId = req.userDB._id;
 
-    // Fetch all approved balance_recharge and withdrawal transactions for the user
+    // Fetch all approved balance_recharge, bot_purchase, and withdrawal transactions for the user
     const transactions = await Transaction.find({
       userId,
       status: "approved",
-      transactionType: { $in: ["balance_recharge", "withdrawal"] },
+      transactionType: {
+        $in: ["balance_recharge", "bot_purchase", "withdrawal"],
+      },
     });
 
-    // Calculate total: sum of balance_recharge minus sum of withdrawal
+    // Calculate total: sum of balance_recharge + bot_purchase minus sum of withdrawal
     let totalRecharge = 0;
     let totalWithdrawal = 0;
 
     transactions.forEach((tx) => {
-      if (tx.transactionType === "balance_recharge") {
+      if (
+        tx.transactionType === "balance_recharge" ||
+        tx.transactionType === "bot_purchase"
+      ) {
         totalRecharge += tx.amount;
       } else if (tx.transactionType === "withdrawal") {
         totalWithdrawal += tx.amount;
