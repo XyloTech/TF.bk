@@ -3,7 +3,7 @@ const bcrypt = require("bcrypt");
 
 const UserSchema = new mongoose.Schema(
   {
-    firebaseUID: { type: String, required: true, unique: true, index: true }, // Store Firebase UID
+    firebaseUID: { type: String, required: true, unique: true }, // Store Firebase UID
     fullName: { type: String, trim: true, default: "" },
     email: {
       type: String,
@@ -11,11 +11,10 @@ const UserSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
-      index: true,
     },
     role: { type: String, enum: ["user", "admin"], default: "user" },
     telegramId: { type: String, default: "" },
-    referralCode: { type: String, unique: true, sparse: true, index: true },
+    referralCode: { type: String, unique: true, sparse: true },
     referralLink: { type: String, default: "" },
     accountBalance: { type: Number, default: 0.0 },
     minimumBalance: { type: Number, default: 5.0 },
@@ -37,5 +36,9 @@ UserSchema.set("toJSON", {
     return ret;
   },
 });
+
+UserSchema.index({ firebaseUID: 1 });
+UserSchema.index({ email: 1 });
+UserSchema.index({ referralCode: 1 });
 
 module.exports = mongoose.model("User", UserSchema);
