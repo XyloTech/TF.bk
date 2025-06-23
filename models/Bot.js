@@ -45,7 +45,7 @@ const BotSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-BotSchema.index({ name: 1 });
+
 BotSchema.index({ active: 1 });
 
 module.exports = mongoose.model("Bot", BotSchema);
