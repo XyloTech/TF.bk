@@ -70,6 +70,25 @@ app.use("/api/logs", require("./routes/logRoutes"));
 app.use("/api/webhooks", require("./routes/webhookRoutes")); // <<< ADD THIS LINE
 app.use("/api/charts", require("./routes/chartRoutes"));
 app.use("/api/stats", require("./routes/statsRoutes"));
+
+// Import the Bull queue
+const exchangeQueue = require('./services/queue');
+
+// Example endpoint to add a job to the queue
+app.post('/api/add-exchange-job', async (req, res) => {
+  try {
+    const { userId, data } = req.body;
+    if (!userId || !data) {
+      return res.status(400).json({ message: 'userId and data are required' });
+    }
+    const job = await exchangeQueue.add({ userId, data });
+    res.status(200).json({ message: 'Job added to queue', jobId: job.id });
+  } catch (error) {
+    console.error('Error adding job to queue:', error);
+    res.status(500).json({ message: 'Failed to add job to queue', error: error.message });
+  }
+});
+
 // --- Global Error Handler (Must be last) ---
 app.use(errorHandler);
 
