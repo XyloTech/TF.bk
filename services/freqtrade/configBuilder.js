@@ -132,6 +132,16 @@ async function generateInstanceConfig(instance) {
   );
   const merged = merge({}, templateDefaults, userConfig, backendConfig);
 
+  // Ensure exit_pricing and entry_pricing are present
+  merged.exit_pricing = merged.exit_pricing || {
+    price_type: "ohlcv",
+    data_key: "close",
+  };
+  merged.entry_pricing = merged.entry_pricing || {
+    price_type: "ohlcv",
+    data_key: "open",
+  };
+
   // --- Apply Defaults & Validation ---
   if (!merged.pairlists?.length) {
     logger.debug(

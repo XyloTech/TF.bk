@@ -1,7 +1,16 @@
 // controllers/paymentController.js
-const axios = require("axios");
+const axios = require('axios');
 const { v4: uuidv4 } = require("uuid");
-const crypto = require("crypto");
+const { 
+  verifyNowPaymentsSignature,
+  createPayment,
+  getPaymentStatus: getPaymentStatusService,
+  validateAddress: validateAddressService,
+  getMinimumPaymentAmount: getMinimumPaymentAmountService,
+  getWithdrawalFee,
+  getEstimatedPrice,
+  createPayout: createPayoutService,
+} = require("../services/nowPaymentsService");
 const Transaction = require("../models/Transaction");
 const User = require("../models/User");
 const BotInstance = require("../models/BotInstance");
@@ -45,28 +54,7 @@ const PAYOUT_STATUS = {
   CANCELLED: "CANCELLED",
 };
 
-// --- Environment Variable Checks & Configuration ---
-if (!process.env.NOWPAYMENTS_API_KEY) {
-  logger.fatal(
-    "FATAL ERROR: NOWPAYMENTS_API_KEY is not set in .env. Payment creation will fail."
-  );
-  // process.exit(1); // Uncomment in production if this is truly fatal for app startup
-}
-const NOWPAYMENTS_IPN_SECRET = process.env.NOWPAYMENTS_IPN_SECRET;
-if (!NOWPAYMENTS_IPN_SECRET) {
-  const message =
-    "NOWPAYMENTS_IPN_SECRET is not set. Webhook verification WILL BE INSECURE.";
-  if (process.env.NODE_ENV === "production") {
-    logger.fatal(
-      `FATAL ERROR: ${message} This is unacceptable for production.`
-    );
-    // process.exit(1); // Uncomment in production
-  } else {
-    logger.error(
-      `CRITICAL WARNING: ${message} OK for local dev only if you understand the risk.`
-    );
-  }
-}
+
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5000"; // For self-reference if needed
 const MIN_RECHARGE_AMOUNT = parseFloat(process.env.MIN_RECHARGE_AMOUNT) || 1; // Default to $1
@@ -85,81 +73,816 @@ function formatCurrency(value, currency = "USD") {
   });
 }
 
-// --- Helper Function for NowPayments Signature Verification ---
-function verifyNowPaymentsSignature(rawBody, signatureHeader, secret) {
-  const operation = "verifyNowPaymentsSignature";
-  if (!signatureHeader) {
-    logger.error({
+
+
+
+
+exports.createPayout = async (req, res) => {
+  const operation = "createPayout";
+  const { address, amount, currency, ipn_callback_url, extra_id } = req.body;
+  const requestingUser = req.userDB; // User from JWT token
+
+  // 1. Input Validation
+  if (!address || !amount || !currency) {
+    logger.warn({
       operation,
-      message: "Verification failed: Missing 'x-nowpayments-sig' header.",
+      message: "Missing required fields for payout: address, amount, or currency",
+      userId: requestingUser._id,
     });
-    return false;
+    return res.status(400).json({ message: "Address, amount, and currency are required for payout." });
   }
-  if (!secret) {
-    // This case should ideally be caught by startup checks, but as a safeguard:
-    logger.error({
+
+  if (typeof amount !== "number" || amount <= 0) {
+    logger.warn({
       operation,
-      message:
-        "Verification failed: NOWPAYMENTS_IPN_SECRET is not configured. Cannot verify.",
+      message: "Invalid amount provided for payout",
+      userId: requestingUser._id,
+      amount,
     });
-    return false; // Always fail if secret is missing, regardless of environment.
-  }
-  if (
-    rawBody === undefined ||
-    rawBody === null ||
-    typeof rawBody.toString !== "function"
-  ) {
-    logger.error({
-      operation,
-      message: "Verification failed: rawBody is missing or invalid.",
-    });
-    return false;
+    return res.status(400).json({ message: "Amount must be a positive number for payout." });
   }
 
   try {
-    const hmac = crypto.createHmac("sha512", secret);
-    const calculatedSignature = hmac
-      .update(rawBody.toString("utf8"))
-      .digest("hex"); // Ensure rawBody is string for HMAC
-
-    const trusted = Buffer.from(calculatedSignature, "utf8");
-    const untrusted = Buffer.from(signatureHeader, "utf8");
-
-    if (
-      trusted.length !== untrusted.length ||
-      !crypto.timingSafeEqual(trusted, untrusted)
-    ) {
+    // 2. Check user's balance (simplified - actual implementation needs to check user's balance in DB)
+    // For now, assuming user has sufficient balance. This needs to be integrated with User model.
+    const user = await User.findById(requestingUser._id);
+    if (!user || user.balance < amount) {
       logger.warn({
         operation,
-        message: "Invalid NowPayments webhook signature.",
-        received: signatureHeader,
-        calculated: calculatedSignature,
+        message: "Insufficient balance for payout",
+        userId: requestingUser._id,
+        requestedAmount: amount,
+        currentBalance: user ? user.balance : 'N/A',
       });
-      return false;
+      return res.status(400).json({ message: "Insufficient balance." });
     }
+
+    // 3. Create a new Transaction record (pending payout)
+    const newTransaction = new Transaction({
+      userId: requestingUser._id,
+      type: TRANSACTION_TYPES.PAYOUT,
+      amount: -amount, // Negative amount for payout
+      currency: currency.toUpperCase(),
+      status: PAYOUT_STATUS.WAITING, // Custom status for payout initiation
+      description: `Withdrawal to ${address}`,
+      metadata: {
+        payoutAddress: address,
+        payoutCurrency: currency,
+        extraId: extra_id || null,
+      },
+    });
+    await newTransaction.save();
+
+    // 4. Construct payload for NowPayments API
+    const nowPaymentsPayload = {
+      address: address,
+      amount: amount,
+      currency: currency.toLowerCase(),
+      ipn_callback_url: ipn_callback_url || `${API_BASE_URL}/api/payments/nowpayments-ipn-payout`,
+      // You might want to use a different IPN URL for payouts vs payments
+      external_id: newTransaction._id.toString(), // Our transaction ID as external_id
+      extra_id: extra_id || null,
+    };
+
     logger.info({
       operation,
-      message: "NowPayments webhook signature verified successfully.",
+      message: "Attempting to create payout with NowPayments",
+      userId: requestingUser._id,
+      transactionId: newTransaction._id,
+      payload: nowPaymentsPayload,
     });
-    return true;
-  } catch (error) {
+
+    // 5. Make request to NowPayments API via service
+    const nowPaymentsRes = await createPayoutService(nowPaymentsPayload);
+
+    const { payout_id, status } = nowPaymentsRes.data;
+
+    // 6. Update the Transaction with payoutId and status
+    newTransaction.paymentGatewayId = payout_id;
+    newTransaction.paymentGatewayStatus = status; // NowPayments initial status
+    // Map NowPayments status to our internal status
+    if (status === 'waiting') {
+      newTransaction.status = PAYOUT_STATUS.WAITING;
+    } else if (status === 'processing') {
+      newTransaction.status = PAYOUT_STATUS.PROCESSING;
+    } else if (status === 'sent') {
+      newTransaction.status = PAYOUT_STATUS.SENT;
+    } else if (status === 'failed') {
+      newTransaction.status = PAYOUT_STATUS.FAILED;
+    } else if (status === 'cancelled') {
+      newTransaction.status = PAYOUT_STATUS.CANCELLED;
+    }
+    await newTransaction.save();
+
+    // 7. Deduct amount from user's balance (if not already handled by IPN)
+    // It's generally safer to deduct on IPN confirmation for crypto, but for immediate feedback,
+    // you might deduct here and refund on IPN failure.
+    // For this example, we'll assume IPN handles final balance update.
+
+    logger.info({
+      operation,
+      message: "Payout created successfully with NowPayments",
+      userId: requestingUser._id,
+      transactionId: newTransaction._id,
+      payoutId: payout_id,
+      nowPaymentsStatus: status,
+    });
+
+    // 8. Return payout details to the frontend
+    res.status(200).json({
+      message: "Payout initiated successfully.",
+      payoutId: payout_id,
+      status: newTransaction.status,
+      transactionId: newTransaction._id,
+    });
+
+  } catch (err) {
+    const errMsg = err.response?.data?.message || err.message;
+    const statusCode = err.response?.status || 500;
+
     logger.error({
       operation,
-      message: "Error during NowPayments signature verification",
-      error: error.message,
-      stack: error.stack,
+      message: "Error creating payout",
+      error: errMsg,
+      statusCode,
+      errorFull: err.response?.data || err,
+      userId: requestingUser._id,
+      address,
+      amount,
+      currency,
     });
-    return false;
-  }
-}
 
-// ! --------------------------------------------------------------------------
+    // If a transaction was created but an error occurred with NowPayments, mark it as failed
+    if (newTransaction && newTransaction._id) {
+      newTransaction.status = PAYOUT_STATUS.FAILED; // Or a more specific 'gateway_error'
+      newTransaction.notes = `NowPayments API error: ${errMsg}`;
+      await newTransaction.save().catch(saveErr => {
+        logger.error({ operation, message: "Failed to update transaction status after NowPayments payout error", transactionId: newTransaction._id, saveErr: saveErr.message });
+      });
+    }
+
+    res.status(statusCode).json({ message: errMsg });
+  }
+};
+
+exports.getEstimatedConversionPrice = async (req, res) => {
+  const operation = "getEstimatedConversionPrice";
+  const { currency_from, currency_to, amount } = req.query;
+  const requestingUser = req.userDB;
+
+  if (!currency_from || !currency_to || !amount) {
+    logger.warn({
+      operation,
+      message: "Missing required query parameters: currency_from, currency_to, or amount",
+      userId: requestingUser._id,
+    });
+    return res.status(400).json({ message: "currency_from, currency_to, and amount are required." });
+  }
+
+  if (isNaN(amount) || parseFloat(amount) <= 0) {
+    logger.warn({
+      operation,
+      message: "Invalid amount provided for estimated conversion price",
+      userId: requestingUser._id,
+      amount,
+    });
+    return res.status(400).json({ message: "Amount must be a positive number." });
+  }
+
+  try {
+    logger.info({
+      operation,
+      message: `Fetching estimated conversion price for ${amount} ${currency_from} to ${currency_to}`,
+      userId: requestingUser._id,
+    });
+
+    const estimatedPriceData = await getEstimatedPrice(
+      parseFloat(amount),
+      currency_from.toLowerCase(),
+      currency_to.toLowerCase()
+    );
+
+    logger.info({
+      operation,
+      message: "Estimated conversion price retrieved successfully",
+      userId: requestingUser._id,
+      estimatedPriceData,
+    });
+
+    res.status(200).json(estimatedPriceData);
+  } catch (err) {
+    const errMsg = err.response?.data?.message || err.message;
+    const statusCode = err.response?.status || 500;
+
+    logger.error({
+      operation,
+      message: "Error fetching estimated conversion price",
+      error: errMsg,
+      statusCode,
+      errorFull: err.response?.data || err,
+      userId: requestingUser._id,
+      currency_from,
+      currency_to,
+      amount,
+    });
+    res.status(statusCode).json({ message: errMsg });
+  }
+};
+
+exports.getWithdrawalFee = async (req, res) => {
+  const operation = "getWithdrawalFee";
+  const { currency, amount } = req.query;
+  const requestingUser = req.userDB;
+
+  if (!currency || !amount) {
+    logger.warn({
+      operation,
+      message: "Missing required query parameters: currency or amount",
+      userId: requestingUser._id,
+    });
+    return res.status(400).json({ message: "Currency and amount are required." });
+  }
+
+  if (isNaN(amount) || parseFloat(amount) <= 0) {
+    logger.warn({
+      operation,
+      message: "Invalid amount provided for withdrawal fee",
+      userId: requestingUser._id,
+      amount,
+    });
+    return res.status(400).json({ message: "Amount must be a positive number." });
+  }
+
+  try {
+    logger.info({
+      operation,
+      message: `Fetching withdrawal fee for ${amount} ${currency}`,
+      userId: requestingUser._id,
+    });
+
+    const feeData = await getWithdrawalFee(currency.toLowerCase(), parseFloat(amount));
+
+    logger.info({
+      operation,
+      message: "Withdrawal fee retrieved successfully",
+      userId: requestingUser._id,
+      feeData,
+    });
+
+    res.status(200).json(feeData);
+  } catch (err) {
+    const errMsg = err.response?.data?.message || err.message;
+    const statusCode = err.response?.status || 500;
+
+    logger.error({
+      operation,
+      message: "Error fetching withdrawal fee",
+      error: errMsg,
+      statusCode,
+      errorFull: err.response?.data || err,
+      userId: requestingUser._id,
+      currency,
+      amount,
+    });
+    res.status(statusCode).json({ message: errMsg });
+  }
+};
+
+exports.createRechargePayment = async (req, res) => {
+  const operation = "createRechargePayment";
+  const { amount, currency, order_description, userIdToCredit, case: paymentCase } = req.body;
+  const requestingUser = req.userDB; // User from JWT token
+
+  // 1. Input Validation
+  if (!amount || !currency || !order_description || paymentCase !== "recharge") {
+    logger.warn({
+      operation,
+      message: "Missing required fields or invalid case for recharge",
+      userId: requestingUser._id,
+      providedData: { amount: !!amount, currency: !!currency, order_description: !!order_description, paymentCase },
+    });
+    return res.status(400).json({ message: "Amount, currency, order_description, and 'case' as 'recharge' are required." });
+  }
+
+  if (typeof amount !== "number" || amount <= 0) {
+    logger.warn({
+      operation,
+      message: "Invalid amount provided for recharge",
+      userId: requestingUser._id,
+      amount,
+    });
+    return res.status(400).json({ message: "Amount must be a positive number." });
+  }
+
+  try {
+    // 2. Generate a unique referenceId
+    const referenceId = uuidv4();
+
+    // 3. Create a new Transaction record (pending)
+    const newTransaction = new Transaction({
+      userId: requestingUser._id,
+      type: TRANSACTION_TYPES.BALANCE_RECHARGE,
+      amount: amount,
+      currency: currency.toUpperCase(),
+      status: PAYMENT_STATUS.PENDING,
+      referenceId: referenceId,
+      description: order_description,
+      metadata: {
+        ...(userIdToCredit && { userIdToCredit: userIdToCredit }),
+      },
+    });
+    await newTransaction.save();
+
+    // 4. Construct payload for NowPayments API
+    const nowPaymentsPayload = {
+      price_amount: amount,
+      price_currency: "usd", // Assuming USD as the base currency for recharge
+      pay_currency: currency.toLowerCase(), // User selected currency for payment
+      ipn_callback_url: `${API_BASE_URL}/api/payments/nowpayments-ipn`,
+      order_id: newTransaction._id.toString(),
+      order_description: order_description,
+      success_url: `${FRONTEND_URL}/dashboard?payment=success&ref=${referenceId}`,
+      cancel_url: `${FRONTEND_URL}/dashboard?payment=cancelled&ref=${referenceId}`,
+    };
+
+    logger.info({
+      operation,
+      message: "Attempting to create recharge payment with NowPayments",
+      userId: requestingUser._id,
+      transactionId: newTransaction._id,
+      referenceId,
+      payload: nowPaymentsPayload,
+    });
+
+    // 5. Make request to NowPayments API via service
+    let nowPaymentsRes;
+    try {
+      nowPaymentsRes = await createPayment(nowPaymentsPayload);
+    } catch (nowPaymentsError) {
+      logger.error({
+        operation,
+        message: "Failed to create recharge payment with NowPayments API",
+        error: nowPaymentsError.message,
+        nowPaymentsResponse: nowPaymentsError.response ? {
+          status: nowPaymentsError.response.status,
+          data: nowPaymentsError.response.data,
+          headers: nowPaymentsError.response.headers
+        } : 'No response object from NowPayments API',
+        userId: requestingUser._id,
+        transactionId: newTransaction._id,
+        payload: nowPaymentsPayload,
+      });
+      throw nowPaymentsError; // Re-throw to be caught by the main try/catch block
+    }
+
+    const { invoice_url, payment_id } = nowPaymentsRes.data;
+
+    // 6. Update the Transaction with paymentId and invoice_url
+    newTransaction.paymentGatewayId = payment_id;
+    newTransaction.invoiceUrl = invoice_url;
+    await newTransaction.save();
+
+    logger.info({
+      operation,
+      message: "Recharge payment created successfully with NowPayments",
+      userId: requestingUser._id,
+      transactionId: newTransaction._id,
+      paymentId: payment_id,
+      invoiceUrl: invoice_url,
+    });
+
+    // 7. Return invoice_url and referenceId to the frontend
+    res.status(200).json({
+      invoice_url,
+      referenceId,
+      message: "Recharge payment initiated successfully.",
+    });
+
+  } catch (err) {
+    const errMsg = err.response?.data?.message || err.message;
+    const statusCode = err.response?.status || 500;
+
+    logger.error({
+      operation,
+      message: "Error creating recharge payment",
+      error: errMsg,
+      statusCode,
+      errorDetails: err.response?.data || err.message,
+      nowPaymentsResponse: err.response ? {
+        status: err.response.status,
+        data: err.response.data,
+        headers: err.response.headers
+      } : 'No response object',
+      userId: requestingUser._id,
+      amount,
+      currency,
+    });
+
+    // If a transaction was created but an error occurred with NowPayments, mark it as failed
+    if (newTransaction && newTransaction._id) {
+      newTransaction.status = PAYMENT_STATUS.REJECTED;
+      newTransaction.notes = `NowPayments API error: ${errMsg}`;
+      await newTransaction.save().catch(saveErr => {
+        logger.error({ operation, message: "Failed to update transaction status after NowPayments recharge error", transactionId: newTransaction._id, saveErr: saveErr.message });
+      });
+    }
+
+    res.status(statusCode).json({ message: errMsg });
+  }
+};
+
+exports.createBotPurchasePayment = async (req, res) => {
+  const operation = "createBotPurchasePayment";
+
+  // Log incoming request for debugging
+  logger.info({
+    operation,
+    message: "Incoming request to createBotPurchasePayment",
+    body: req.body,
+    userId: req.userDB?._id, // Assuming req.userDB is populated by auth middleware
+  });
+
+  logger.info({
+    operation,
+    message: "NOWPAYMENTS_API_KEY status",
+    isSet: !!process.env.NOWPAYMENTS_API_KEY,
+    maskedKey: process.env.NOWPAYMENTS_API_KEY ? process.env.NOWPAYMENTS_API_KEY.substring(0, 4) + '...' : 'Not Set'
+  });
+
+  // Ensure NowPayments API key is configured
+  if (!process.env.NOWPAYMENTS_API_KEY) {
+    logger.error({
+      operation,
+      message: "NOWPAYMENTS_API_KEY is not set. Cannot process payment.",
+      userId: req.userDB?._id,
+    });
+    return res.status(500).json({ message: "Payment service not configured: Missing API Key." });
+  }
+  let { amount, botId, userIdToCredit } = req.body;
+  
+  // Enhanced amount parsing and validation
+  try {
+    amount = parseFloat(amount);
+    if (isNaN(amount)) {
+      throw new Error('Amount must be a valid number');
+    }
+  } catch (err) {
+    logger.warn({
+      operation,
+      message: "Invalid amount format",
+      userId: req.userDB?._id,
+      amount: req.body.amount,
+      error: err.message
+    });
+    return res.status(400).json({ message: "Amount must be a valid number." });
+  }
+  
+  const requestingUser = req.userDB; // User from JWT token
+
+  // 1. Input Validation
+  if (!amount || !botId) {
+    logger.warn({
+      operation,
+      message: "Missing required fields: amount or botId",
+      userId: requestingUser._id,
+      providedData: { 
+        amount: req.body.amount, 
+        botId: botId,
+        rawAmountType: typeof req.body.amount
+      },
+    });
+    return res.status(400).json({ 
+      message: "Amount and botId are required.",
+      details: {
+        amountType: typeof req.body.amount,
+        amountValue: req.body.amount
+      }
+    });
+  }
+
+  if (typeof amount !== "number" || amount <= 0) {
+    logger.warn({
+      operation,
+      message: "Invalid amount provided",
+      userId: requestingUser._id,
+      amount,
+      rawAmount: req.body.amount,
+      amountType: typeof req.body.amount
+    });
+    return res.status(400).json({ 
+      message: "Amount must be a positive number.",
+      details: {
+        parsedAmount: amount,
+        rawAmount: req.body.amount
+      }
+    });
+  }
+
+  try {
+    // 2. Fetch Bot and User details
+    const bot = await Bot.findById(botId);
+    if (!bot) {
+      logger.warn({
+        operation,
+        message: "Bot not found",
+        userId: requestingUser._id,
+        botId,
+      });
+      return res.status(404).json({ message: "Bot not found." });
+    }
+
+    // Ensure the amount matches the bot's price
+    if (amount !== bot.price) {
+      logger.warn({
+        operation,
+        message: "Provided amount does not match bot price",
+        userId: requestingUser._id,
+        botId,
+        providedAmount: amount,
+        botPrice: bot.price,
+      });
+      return res.status(400).json({ message: "Provided amount does not match the bot's price." });
+    }
+
+    // 3. Generate a unique referenceId
+    const referenceId = uuidv4();
+
+    // 4. Create a new Transaction record (pending)
+    const newTransaction = new Transaction({
+      userId: requestingUser._id,
+      type: TRANSACTION_TYPES.BOT_PURCHASE,
+      amount: amount,
+      currency: "USD", // Assuming USD for bot purchases
+      status: PAYMENT_STATUS.PENDING,
+      referenceId: referenceId,
+      description: `Purchase of ${bot.name} bot`,
+      metadata: {
+        botId: bot._id,
+        botName: bot.name,
+        ...(userIdToCredit && { userIdToCredit: userIdToCredit }), // Include if provided
+      },
+    });
+    await newTransaction.save();
+
+    // 5. Construct payload for NowPayments API
+    const nowPaymentsPayload = {
+      price_amount: amount,
+      price_currency: "usd",
+      pay_currency: "btc", // Changed to BTC as NowPayments typically deals with cryptocurrencies
+      ipn_callback_url: `${API_BASE_URL}/api/payments/nowpayments-ipn`,
+      order_id: newTransaction._id.toString(), // Use our transaction ID as NowPayments order_id
+      order_description: `BotMoon Bot Purchase: ${bot.name}`,
+      success_url: `${FRONTEND_URL}/dashboard?payment=success&ref=${referenceId}`,
+      cancel_url: `${FRONTEND_URL}/dashboard?payment=cancelled&ref=${referenceId}`,
+    };
+
+    logger.info({
+      operation,
+      message: "Attempting to create payment with NowPayments",
+      userId: requestingUser._id,
+      transactionId: newTransaction._id,
+      referenceId,
+      payload: nowPaymentsPayload,
+    });
+    console.log("🔍 Payload for NowPayments:", nowPaymentsPayload);
+
+    // 6. Make request to NowPayments API via service
+    let nowPaymentsRes;
+    try {
+      nowPaymentsRes = await createPayment(nowPaymentsPayload);
+    } catch (nowPaymentsError) {
+      logger.error({
+        operation,
+        message: "Failed to create payment with NowPayments API",
+        error: nowPaymentsError.message,
+        nowPaymentsResponse: nowPaymentsError.response ? { 
+          status: nowPaymentsError.response.status, 
+          data: nowPaymentsError.response.data, 
+          headers: nowPaymentsError.response.headers 
+        } : 'No response object from NowPayments API',
+        userId: requestingUser._id,
+        transactionId: newTransaction._id,
+        payload: nowPaymentsPayload,
+      });
+      console.error("❌ NowPayments error:", nowPaymentsError.response?.data || nowPaymentsError.message);
+      // Re-throw to be caught by the main try/catch block
+      throw nowPaymentsError;
+    }
+
+    const { invoice_url, payment_id } = nowPaymentsRes.data;
+
+    // 7. Update the Transaction with paymentId and invoice_url
+    newTransaction.paymentGatewayId = payment_id;
+    newTransaction.invoiceUrl = invoice_url;
+    await newTransaction.save();
+
+    logger.info({
+      operation,
+      message: "Payment created successfully with NowPayments",
+      userId: requestingUser._id,
+      transactionId: newTransaction._id,
+      paymentId: payment_id,
+      invoiceUrl: invoice_url,
+    });
+
+    // 8. Return invoice_url and referenceId to the frontend
+    res.status(200).json({
+      invoice_url,
+      referenceId,
+      message: "Payment initiated successfully.",
+    });
+
+  } catch (err) {
+    const errMsg = err.response?.data?.message || err.message;
+    const statusCode = err.response?.status || 500;
+
+    logger.error({
+      operation,
+      message: "Error creating bot purchase payment",
+      error: errMsg,
+      statusCode,
+      errorDetails: err.response?.data || err.message, // More specific error details
+      nowPaymentsResponse: err.response ? { 
+        status: err.response.status, 
+        data: err.response.data, 
+        headers: err.response.headers 
+      } : 'No response object', // Log full NowPayments response if available
+      userId: requestingUser._id,
+      botId,
+      amount,
+    });
+    console.error("Full error object:", err);
+
+    // If a transaction was created but an error occurred with NowPayments, mark it as failed
+    if (newTransaction && newTransaction._id) {
+      newTransaction.status = PAYMENT_STATUS.REJECTED; // Or a more specific 'gateway_error'
+      newTransaction.notes = `NowPayments API error: ${errMsg}`;
+      await newTransaction.save().catch(saveErr => {
+        logger.error({ operation, message: "Failed to update transaction status after NowPayments error", transactionId: newTransaction._id, saveErr: saveErr.message });
+      });
+    }
+
+    res.status(statusCode).json({ message: errMsg });
+  }
+};
+
+
+exports.getPaymentStatus = async (req, res) => {
+  const operation = "getPaymentStatus";
+  const { ref: referenceId } = req.query;
+  const requestingUser = req.userDB; // User from JWT token
+
+  if (!referenceId) {
+    logger.warn({
+      operation,
+      message: "Missing referenceId in query parameters",
+      userId: requestingUser._id,
+    });
+    return res.status(400).json({ message: "referenceId is required." });
+  }
+
+  try {
+    const transaction = await Transaction.findOne({ referenceId, userId: requestingUser._id });
+
+    if (!transaction) {
+      logger.warn({
+        operation,
+        message: "Transaction not found or not associated with user",
+        userId: requestingUser._id,
+        referenceId,
+      });
+      return res.status(404).json({ message: "Payment not found." });
+    }
+
+    // Fetch latest status from NowPayments if paymentGatewayId exists
+    let nowPaymentsStatus = transaction.paymentGatewayStatus;
+    if (transaction.paymentGatewayId) {
+      try {
+        const nowPaymentsData = await getPaymentStatusService(transaction.paymentGatewayId);
+        nowPaymentsStatus = nowPaymentsData.payment_status;
+        // Optionally update the transaction status in DB if it changed
+        if (transaction.paymentGatewayStatus !== nowPaymentsStatus) {
+          transaction.paymentGatewayStatus = nowPaymentsStatus;
+          await transaction.save();
+        }
+      } catch (nowPaymentsErr) {
+        logger.error({
+          operation,
+          message: "Failed to fetch latest status from NowPayments",
+          error: nowPaymentsErr.message,
+          paymentGatewayId: transaction.paymentGatewayId,
+        });
+        // Continue with existing status if API call fails
+      }
+    }
+
+    // Determine bot details if applicable
+    let botName = null;
+    let botInstanceId = null;
+    if (transaction.type === TRANSACTION_TYPES.BOT_PURCHASE && transaction.metadata && transaction.metadata.botId) {
+      const bot = await Bot.findById(transaction.metadata.botId);
+      if (bot) {
+        botName = bot.name;
+      }
+      if (transaction.metadata.botInstanceId) {
+        botInstanceId = transaction.metadata.botInstanceId;
+      }
+    }
+
+    // Construct the response object as per documentation
+    const response = {
+      referenceId: transaction.referenceId,
+      status: transaction.status,
+      transactionType: transaction.type,
+      amount: transaction.amount,
+      currency: transaction.currency,
+      createdAt: transaction.createdAt,
+      paymentStatusNowPayments: nowPaymentsStatus, // Use fetched status
+      paymentUrl: transaction.invoiceUrl || null,
+      botId: transaction.metadata?.botId || null,
+      botName: botName,
+      botInstanceId: botInstanceId,
+      feeCreditPercentageApplied: transaction.metadata?.feeCreditPercentageApplied || 0,
+      durationMonthsApplied: transaction.metadata?.durationMonthsApplied || 0,
+      errorMessage: transaction.notes || null, // Use notes for error messages
+    };
+
+    logger.info({
+      operation,
+      message: "Payment status retrieved successfully",
+      userId: requestingUser._id,
+      referenceId,
+      status: transaction.status,
+    });
+
+    res.status(200).json(response);
+
+  } catch (err) {
+    logger.error({
+      operation,
+      message: "Error retrieving payment status",
+      error: err.message,
+      errorFull: err,
+      userId: requestingUser._id,
+      referenceId,
+    });
+    res.status(500).json({ message: "Internal server error." });
+  }
+};
+
+exports.getMinimumPaymentAmount = async (req, res) => {
+  const operation = "getMinimumPaymentAmount";
+  const { currency_from, currency_to } = req.query;
+  const requestingUser = req.userDB;
+
+  if (!currency_from || !currency_to) {
+    logger.warn({
+      operation,
+      message: "Missing required query parameters: currency_from or currency_to",
+      userId: requestingUser._id,
+    });
+    return res.status(400).json({ message: "currency_from and currency_to are required." });
+  }
+
+  try {
+    logger.info({
+      operation,
+      message: `Fetching minimum payment amount for ${currency_from} to ${currency_to}`,
+      userId: requestingUser._id,
+    });
+
+    const minAmountData = await getMinimumPaymentAmountService(currency_from.toLowerCase(), currency_to.toLowerCase());
+
+    logger.info({
+      operation,
+      message: "Minimum payment amount retrieved successfully",
+      userId: requestingUser._id,
+      minAmountData,
+    });
+
+    res.status(200).json(minAmountData);
+  } catch (err) {
+    const errMsg = err.response?.data?.message || err.message;
+    const statusCode = err.response?.status || 500;
+
+    logger.error({
+      operation,
+      message: "Error fetching minimum payment amount",
+      error: errMsg,
+      statusCode,
+      errorFull: err.response?.data || err,
+      userId: requestingUser._id,
+      currency_from,
+      currency_to,
+    });
+    res.status(statusCode).json({ message: errMsg });
+  }
+};
 
 exports.validateAddress = async (req, res) => {
   const operation = "validateAddress";
   const { address, currency } = req.body;
   const requestingUser = req.userDB;
-  console.log("validateAddress request body: ", req.body);
 
   // Input validation
   if (!address || !currency) {
@@ -193,22 +916,7 @@ exports.validateAddress = async (req, res) => {
       address: address.substring(0, 10) + "...", // Log partial address for privacy
     });
 
-    const nowPaymentsPayload = {
-      address: address.trim(),
-      currency: currency.toLowerCase().trim(),
-      extra_id: null,
-    };
-
-    const nowRes = await axios.post(
-      "https://api.nowpayments.io/v1/payout/validate-address",
-      nowPaymentsPayload,
-      {
-        headers: {
-          "x-api-key": process.env.NOWPAYMENTS_API_KEY,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const nowRes = await validateAddressService(address.trim(), currency.toLowerCase().trim(), req.body.extra_id || null);
 
     logger.info({
       operation,
@@ -219,11 +927,10 @@ exports.validateAddress = async (req, res) => {
     });
 
     res.status(200).json({
-      valid: nowRes.data.status !== false,
+      valid: nowRes.data.status !== false, // NowPayments returns 'status: true/false' for validation
       currency: currency.toLowerCase(),
       address: address,
-      extra_id: null,
-      nowpayments_response: nowRes.data,
+      extra_id: nowRes.data.extra_id || null, // Use extra_id from NowPayments response if available
     });
   } catch (err) {
     const errMsg = err.response?.data?.message || err.message;
@@ -239,21 +946,73 @@ exports.validateAddress = async (req, res) => {
       currency,
     });
 
-    // If it's a validation error from NowPayments (400), return structured response
-    if (statusCode === 400) {
-      return res.status(200).json({
-        valid: false,
-        currency: currency.toLowerCase(),
-        address: address,
-        extra_id: null,
-        error: errMsg,
-        nowpayments_response: err.response?.data,
-      });
-    }
-
-    res.status(statusCode >= 400 && statusCode < 500 ? statusCode : 500).json({
-      message: errMsg || "Failed to validate address. Please try again later.",
+    // For any error during validation, return valid: false and an error message
+    res.status(200).json({
+      valid: false,
+      currency: currency.toLowerCase(),
+      address: address,
+      extra_id: null,
+      errorMessage: errMsg || "Failed to validate address. Please try again later.",
     });
+  }
+};
+
+exports.getMinimumPaymentAmount = async (req, res) => {
+  const operation = "getMinimumPaymentAmount";
+  const { currency_from, currency_to } = req.query;
+
+  // 1. Input Validation
+  if (!currency_from || !currency_to) {
+    logger.warn({
+      operation,
+      message: "Missing required query parameters: currency_from or currency_to",
+      providedData: { currency_from: !!currency_from, currency_to: !!currency_to },
+    });
+    return res.status(400).json({ message: "currency_from and currency_to are required query parameters." });
+  }
+
+  try {
+    logger.info({
+      operation,
+      message: `Fetching minimum payment amount for ${currency_from} to ${currency_to}`,
+    });
+
+    // 2. Make request to NowPayments API
+    const nowPaymentsRes = await axios.get(
+      `https://api.nowpayments.io/v1/min-amount?currency_from=${currency_from.toLowerCase()}&currency_to=${currency_to.toLowerCase()}`,
+      {
+        headers: {
+          "x-api-key": process.env.NOWPAYMENTS_API_KEY,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const { min_amount, currency_from: res_currency_from, currency_to: res_currency_to, fiat_equivalent } = nowPaymentsRes.data;
+
+    // 3. Return the response to the frontend
+    res.status(200).json({
+      currency_from: res_currency_from,
+      currency_to: res_currency_to,
+      min_amount: parseFloat(min_amount),
+      fiat_equivalent: parseFloat(fiat_equivalent),
+    });
+
+  } catch (err) {
+    const errMsg = err.response?.data?.message || err.message;
+    const statusCode = err.response?.status || 500;
+
+    logger.error({
+      operation,
+      message: "Error fetching minimum payment amount",
+      error: errMsg,
+      statusCode,
+      errorFull: err.response?.data || err,
+      currency_from,
+      currency_to,
+    });
+
+    res.status(statusCode).json({ message: errMsg });
   }
 };
 // ! --------------------------------------------------------------------------
@@ -834,17 +1593,6 @@ exports.nowPaymentsWebhook = async (req, res) => {
   const operation = "nowPaymentsWebhook";
 
   const signature = req.headers["x-nowpayments-sig"];
-  // ASSUMPTION: express.json({ verify: ... }) is set up in server.js to populate req.rawBody
-  if (req.rawBody === undefined) {
-    logger.error({
-      operation,
-      message:
-        "req.rawBody is undefined. express.json({ verify: ... }) middleware might not be set up correctly for webhook route.",
-    });
-    return res
-      .status(500)
-      .json({ message: "Internal server configuration error for webhook." });
-  }
   const isVerified = verifyNowPaymentsSignature(
     req.rawBody,
     signature,

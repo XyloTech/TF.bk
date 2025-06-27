@@ -1,15 +1,18 @@
 // routes/paymentRoutes.js
 const express = require("express");
 const {
+  rechargeAmount
+} = require("../controllers/transactionController"); // Adjust path
+const {
   createBotPurchasePayment,
   createRechargePayment,
   nowPaymentsWebhook,
   getPaymentStatus,
-  minimumAmount,
   validateAddress,
-  withdrawalFee,
-  estimatedPrice,
+  getWithdrawalFee,
+  getEstimatedConversionPrice,
   createPayout,
+  getMinimumPaymentAmount,
 } = require("../controllers/paymentController"); // Adjust path
 const authenticateUser = require("../middleware/authMiddleware"); // Adjust path
 
@@ -31,13 +34,13 @@ router.post(
   createRechargePayment
 );
 
-router.get("/minimum-amount", authenticateUser, express.json(), minimumAmount);
+router.get("/minimum-amount", authenticateUser, getMinimumPaymentAmount);
 
 // POST /api/payments/webhook - NowPayments sends status updates (Needs RAW body for signature check)
 // Apply express.raw() BEFORE the controller handles it.
 router.post(
   "/webhook",
-  express.raw({ type: "application/json" }), // Capture raw body as buffer
+  express.raw({ type: 'application/json' }), // Ensure raw body is available for signature verification
   nowPaymentsWebhook
 );
 
@@ -46,18 +49,34 @@ router.get("/status", authenticateUser, getPaymentStatus);
 router.post("/validate-address", authenticateUser, validateAddress);
 
 // --- Withdrawal Fee Endpoint ---
-router.get("/withdrawal-fee", authenticateUser, express.json(), withdrawalFee);
+router.get("/withdrawal-fee", authenticateUser, express.json(), getWithdrawalFee);
 
 // --- Estimated Price Endpoint ---
 router.get(
   "/estimated-price",
   authenticateUser,
   express.json(),
-  estimatedPrice
+  getEstimatedConversionPrice
 );
 
-router.post("/create-payout", authenticateUser, express.json(), createPayout);
-// router.post("/payout-webhook", payoutWebhook); // No auth middleware for webhooks
-module.exports = router; // router.post("/payout-webhook", payoutWebhook); // No auth middleware for webhooks
+router.post(
+  "/create-payout", authenticateUser, express.json(), createPayout
+);
 
+// POST /api/payments/purchase - Assuming this is for bot purchase based on frontend error
+router.post(
+  "/purchase",
+  authenticateUser,
+  express.json(),
+  createBotPurchasePayment
+);
+
+// GET /api/payments/recharge-amount - User fetches their total recharge amount
+router.get(
+  "/recharge-amount",
+  authenticateUser,
+  rechargeAmount
+);
+
+// router.post("/payout-webhook", payoutWebhook); // No auth middleware for webhooks
 module.exports = router;

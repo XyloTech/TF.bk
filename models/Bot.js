@@ -39,7 +39,7 @@ const BotSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true, // Added trim
-      default: "SampleStrategy.py", // Make sure default has .py if that's the convention
+      default: "SmartScalpingDCA.py", // Make sure default has .py if that's the convention
     },
   },
   { timestamps: true }

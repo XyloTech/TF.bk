@@ -1,0 +1,185 @@
+# Payment API Documentation
+
+Generated on 2025-06-27 11:27:46
+
+## 1. Create Bot Purchase Payment
+
+- **Endpoint:** `POST /api/payments/create-bot-purchase`
+- **Headers:**
+  - `Authorization: Bearer <JWT_TOKEN>`
+  - `Content-Type: application/json`
+- **Request Body:**
+  ```json
+  {
+    "amount": 25.00,
+    "botId": "BOT_OBJECT_ID",
+    "userIdToCredit": "USER_OBJECT_ID" // Optional
+  }
+  ```
+- **Success Response:**
+  ```json
+  {
+    "invoice_url": "https://nowpayments.io/payment-link",
+    "referenceId": "UUID-REF"
+  }
+  ```
+
+## 2. Create Account Balance Recharge
+
+- **Endpoint:** `POST /api/payments/create-recharge`
+- **Headers:**
+  - `Authorization: Bearer <JWT_TOKEN>`
+  - `Content-Type: application/json`
+- **Request Body:**
+  ```json
+  {
+    "amount": 10.00,
+    "currency": "usdt",
+    "order_description": "Recharge for trading",
+    "userIdToCredit": "USER_OBJECT_ID",
+    "case": "recharge"
+  }
+  ```
+- **Success Response:**
+  ```json
+  {
+    "invoice_url": "https://nowpayments.io/payment-link",
+    "referenceId": "UUID-REF"
+  }
+  ```
+
+## 3. Get Payment Status
+
+- **Endpoint:** `GET /api/payments/status?ref=<referenceId>`
+- **Headers:**
+  - `Authorization: Bearer <JWT_TOKEN>`
+- **Success Response:**
+  ```json
+  {
+    "referenceId": "UUID-REF",
+    "status": "pending|approved|rejected",
+    "transactionType": "bot_purchase|balance_recharge|...",
+    "botId": "BOT_OBJECT_ID",
+    "botName": "Bot Name",
+    "amount": 25,
+    "createdAt": "...",
+    "paymentStatusNowPayments": "...",
+    "paymentUrl": "...",
+    "botInstanceId": "BOT_INSTANCE_ID",
+    "feeCreditPercentageApplied": 0.5,
+    "durationMonthsApplied": 1,
+    "errorMessage": "..."
+  }
+  ```
+
+## 4. Validate Crypto Wallet Address
+
+- **Endpoint:** `POST /api/payments/validate-address`
+- **Headers:**
+  - `Authorization: Bearer <JWT_TOKEN>`
+  - `Content-Type: application/json`
+- **Request Body:**
+  ```json
+  {
+    "address": "wallet_address_here",
+    "currency": "usdt"
+  }
+  ```
+- **Success Response:**
+  ```json
+  {
+    "valid": true,
+    "currency": "usdt",
+    "address": "wallet_address_here",
+    "extra_id": null
+  }
+  ```
+
+## 5. Get Minimum Payment Amount
+
+- **Endpoint:** `GET /api/payments/minimum-amount?currency_from=btc&currency_to=usd`
+- **Headers:**
+  - `Authorization: Bearer <JWT_TOKEN>`
+- **Success Response:**
+  ```json
+  {
+    "currency_from": "btc",
+    "currency_to": "usd",
+    "min_amount": 0.0001,
+    "fiat_equivalent": 5.0
+  }
+  ```
+
+## 6. Get Withdrawal Fee
+
+- **Endpoint:** `GET /api/payments/withdrawal-fee?currency=usdt&amount=10`
+- **Headers:**
+  - `Authorization: Bearer <JWT_TOKEN>`
+- **Success Response:**
+  ```json
+  {
+    "currency": "usdt",
+    "fee": 0.5
+  }
+  ```
+
+## 7. Get Estimated Conversion Price
+
+- **Endpoint:** `GET /api/payments/estimated-price?amount=10&currency_from=usdt&currency_to=btc`
+- **Headers:**
+  - `Authorization: Bearer <JWT_TOKEN>`
+- **Success Response:**
+  ```json
+  {
+    "currency_from": "usdt",
+    "amount_from": 10,
+    "currency_to": "btc",
+    "estimated_amount": 0.00025
+  }
+  ```
+
+## 8. Create Payout (Withdraw Funds)
+
+- **Endpoint:** `POST /api/payments/create-payout`
+- **Headers:**
+  - `Authorization: Bearer <JWT_TOKEN>`
+  - `Content-Type: application/json`
+- **Request Body:**
+  ```json
+  {
+    "withdrawals": [
+      {
+        "address": "wallet_address_here",
+        "currency": "usdt",
+        "amount": 10.0,
+        "payout_description": "Withdrawal to my wallet"
+      }
+    ]
+  }
+  ```
+- **Success Response:**
+  ```json
+  {
+    "success": true,
+    "batchId": "NOWPAYMENTS_BATCH_ID",
+    "referenceId": "UUID-REF",
+    "withdrawals": [
+      {
+        "id": "WITHDRAWAL_ID",
+        "address": "wallet_address_here",
+        "currency": "usdt",
+        "amount": 10.0,
+        "status": "WAITING",
+        "created_at": "..."
+      }
+    ]
+  }
+  ```
+
+## 9. NowPayments Webhook
+
+- **Endpoint:** `POST /api/payments/webhook`
+- **Headers:**
+  - `x-nowpayments-sig: <signature>`
+  - `Content-Type: application/json`
+- **Request Body:** Sent by NowPayments, not the frontend.
