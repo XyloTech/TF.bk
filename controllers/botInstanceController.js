@@ -22,6 +22,16 @@ exports.purchaseBot = async (req, res) => {
     } = req.body;
     const userId = req.userDB._id;
 
+    // Check if the user already has any bot instance
+    const existingBotInstance = await BotInstance.findOne({ userId: userId });
+
+    if (existingBotInstance) {
+      logger.warn(
+        `[${operation}] User ${userId} already has an existing bot instance (${existingBotInstance._id}). Cannot create a new one.`
+      );
+      return res.status(400).json({ message: 'You can only have one bot instance. Please manage your existing bot instead.' });
+    }
+
     logger.info(
       `[${operation}] User: ${userId} attempting to purchase/initiate bot. Body:`,
       // Mask sensitive fields if they were accidentally sent for demo
@@ -367,6 +377,16 @@ exports.updateBotInstanceKeys = async (req, res) => {
     );
 
     const updatedInstance = await BotInstance.findById(botInstanceId);
+    // After successfully updating bot instance keys, check if user's registration is complete
+    // If not, mark it as complete.
+    if (!req.userDB.registrationComplete) {
+      req.userDB.registrationComplete = true;
+      await req.userDB.save();
+      logger.info(
+        `[${operation}] User ${userId} registration marked as complete.`
+      );
+    }
+
     res.json({
       message: "Bot instance configuration updated successfully.",
       instance: updatedInstance.toJSON(),
@@ -455,7 +475,9 @@ exports.getBotInstanceConfigDetails = async (req, res) => {
 };
 
 // 🔹 Start Bot Instance
-exports.startBotInstance = async (req, res) => {
+exports.startBotInstance = async (req, res, next) => {
+  
+
   const operation = "startBotInstance";
   if (!req.userDB || !req.userDB._id) {
     logger.error(`[${operation}] Authentication data missing.`);
@@ -582,10 +604,15 @@ exports.startBotInstance = async (req, res) => {
     }
 
     logger.info(
-      `[${operation}] All checks passed for instance ${instance._id}. Calling startFreqtradeProcess.`
+      `[${operation}] All checks passed for instance ${instance._id}. Calling startFreqtradeProcess for instance ID: ${botInstanceId}.`
     );
     // `startFreqtradeProcess` from freqtradeManager.js returns { message, instance (updated instance from DB) }
-    const result = await startFreqtradeProcess(botInstanceId.toString());
+      logger.info(`[Controller] About to call startFreqtradeProcess for instance ID: ${instance._id}`);
+      logger.info(`[Controller] About to call startFreqtradeProcess for botInstanceId: ${instance._id}`);
+      // Call the service to start the Freqtrade process
+      const result = await startFreqtradeProcess(
+        instance._id
+      );
 
     logger.info(
       `[${operation}] Start process result for instance ${instance._id}:`,
@@ -644,7 +671,12 @@ exports.startBotInstance = async (req, res) => {
     const botInstanceIdForLog = req.params.botInstanceId || "UNKNOWN_INSTANCE";
     logger.error(
       `[${operation}] API Error processing start for instance ${botInstanceIdForLog} user ${userIdForLog}:`,
-      error
+      {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+        fullError: error, // Log the full error object for inspection
+      }
     );
 
     const botNameForError =

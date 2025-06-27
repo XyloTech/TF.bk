@@ -1,9 +1,5 @@
 // crypto-bot/config/config.js
-const dotenv = require("dotenv");
 const path = require("path");
-
-// Load environment variables from .env file
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 // Required environment variables
 const requiredEnvVars = ["MONGO_URI", "JWT_SECRET", "CRYPTO_SECRET_KEY"];
@@ -28,7 +24,7 @@ if (cryptoSecretKeyFromEnv.length !== 64) {
 // Configuration object
 module.exports = {
   env: process.env.NODE_ENV || "development",
-  port: process.env.PORT || 5000,
+  port: process.env.PORT || 5002,
   mongodb: {
     uri: process.env.MONGO_URI,
     options: {
@@ -43,8 +39,9 @@ module.exports = {
     secretKey: process.env.CRYPTO_SECRET_KEY,
   },
   cors: {
-    allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",") || [
+    allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",").map(s => s.trim()) || [
       "https://botmoon-pro.netlify.app/",
+      "http://localhost:3000",
     ],
   },
   telegram: {

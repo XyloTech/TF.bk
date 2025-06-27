@@ -1,11 +1,21 @@
 // crypto-bot/server.js
+const dotenv = require("dotenv");
+dotenv.config();
+
+
 const express = require("express");
+
 const mongoose = require("mongoose");
-const http = require("http");
 const cors = require("cors");
 const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const slowDown = require("express-slow-down");
 const config = require("./config/config");
-const requestLogger = require("./middleware/requestLogger");
+const logger = require("./utils/logger"); // Ensure logger is available early
+require('./config/firebase'); // Initialize Firebase Admin SDK
+
+const backtestRoutes = require('./routes/backtestRoutes');
+const orderRoutes = require('./routes/orderRoutes');
 
 // --- Middleware ---
 const errorHandler = require("./middleware/errorHandler");
@@ -26,23 +36,35 @@ const app = express();
 // Trust the first proxy hop (common for platforms like Render, Heroku)
 app.set("trust proxy", 1);
 
+const http = require('http');
 const server = http.createServer(app);
 
 // mongoose.set("debug", true); // Keep this for dev, consider removing for prod
 // --- Core Middleware ---
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({
+  limit: "1mb",
+  verify: (req, res, buf) => {
+    if (req.originalUrl === '/api/payments/webhook') {
+      req.rawBody = buf.toString();
+    }
+  },
+}));
+app.use(express.raw({ type: 'application/json', limit: '1mb' }));
 app.use(securityHeaders); // Your custom security headers from middleware
 // app.use(helmet()); // If securityHeaders isn't a full replacement for helmet, you might want both or to integrate.
+const requestLogger = require('./middleware/requestLogger');
 app.use(requestLogger);
 
 // --- CORS Configuration ---
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin || config.cors.allowedOrigins.includes(origin)) {
+      const allowedOrigins = ['http://localhost:3000', 'http://localhost:5000', ...(config.cors.allowedOrigins || [])];
+      console.log(`CORS Debug - Origin: ${origin}, Allowed: ${allowedOrigins.join(', ')}`);
+      if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        logger.warn(`CORS: Blocked origin - ${origin}`); // Added logging for blocked origins
+        console.log(`CORS: Blocked origin - ${origin}`);
         callback(new Error("Not allowed by CORS"));
       }
     },
@@ -81,6 +103,9 @@ app.use("/api/logs", require("./routes/logRoutes"));
 app.use("/api/webhooks", require("./routes/webhookRoutes"));
 app.use("/api/charts", require("./routes/chartRoutes"));
 app.use("/api/stats", require("./routes/statsRoutes"));
+
+app.use('/api/backtest', backtestRoutes);
+app.use('/api/order', orderRoutes);
 
 // --- Not Found Handler (for API routes) ---
 app.use("/api/*", (req, res, next) => {
@@ -136,10 +161,17 @@ async function startServer() {
     console.log(" Scheduler initialized"); // Use logger.info
 
     // 5. Start HTTP Server
-    const PORT = config.port;
+    const PORT = process.env.PORT || 5002;
     server.listen(PORT, () => {
-      console.log(` Server running on port ${PORT} (${config.env} mode)`); // Use logger.info
-      console.log(`🟢 Application ready! Access at http://localhost:${PORT}`); // Use logger.info
+      logger.info(` Server running on port ${PORT} (${config.env} mode)`);
+      logger.info(`🟢 Application ready! Access at http://localhost:${PORT}`);
+    }).on('error', (err) => {
+      logger.error(`❌ Server failed to start or encountered an error: ${err.message}`);
+      if (err.code === 'EADDRINUSE') {
+        logger.error(`Port ${PORT} is already in use. Please ensure no other process is running on this port.`);
+      }
+      // Re-throw the error to be caught by the outer try-catch block
+      throw err;
     });
   } catch (error) {
     console.error("❌ Server startup failed:", error); // Use logger.fatal or logger.error

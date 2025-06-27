@@ -12,9 +12,9 @@ const logger = require("../utils/logger"); // Adjust path as needed
 // --- Configuration ---
 // !! IMPORTANT: Adjust these values based on YOUR Freqtrade setup !!
 const FREQTRADE_EXECUTABLE_PATH =
-  process.env.FREQTRADE_EXECUTABLE_PATH || "./venu"; // Or absolute path
+  process.env.FREQTRADE_EXECUTABLE_PATH || path.resolve(__dirname, "../../venv/Scripts/python.exe"); // Default to venv python executable
 const FREQTRADE_USER_DATA_DIR =
-  process.env.FREQTRADE_USER_DATA_DIR || path.resolve("./freqtrade-user-data"); // Base user-data dir
+  process.env.FREQTRADE_USER_DATA_DIR || path.resolve(__dirname, "../../data/ft_user_data"); // Base user-data dir
 
 // --- Strategy Source Directory (from .env) ---
 const STRATEGY_SOURCE_DIR = process.env.STRATEGY_SOURCE_DIR;
@@ -313,11 +313,9 @@ async function generateInstanceConfig(instance) {
   );
 
   // Layer 2: Bot Template Defaults
-  // ... (same as before) ...
   const templateDefaultConfig = templateDefaults;
 
   // Layer 3: User Instance Overrides
-  // ... (same as before) ...
   const userInstanceConfig =
     instance.config && typeof instance.config === "object"
       ? instance.config
@@ -449,10 +447,25 @@ async function generateInstanceConfig(instance) {
 // --- Start Freqtrade Process (Uses generateInstanceConfig) ---
 // (startFreqtradeProcess function remains the same as your latest version)
 async function startFreqtradeProcess(instanceId) {
+
+  // Validate FREQTRADE_EXECUTABLE_PATH
+  const isExecutablePathValid = await fs.access(FREQTRADE_EXECUTABLE_PATH, fs.constants.F_OK | fs.constants.X_OK)
+    .then(() => true)
+    .catch(() => false);
+
+  if (!FREQTRADE_EXECUTABLE_PATH || !isExecutablePathValid) {
+    const errorMessage = `FREQTRADE_EXECUTABLE_PATH is not set or points to an invalid/inaccessible path: ${FREQTRADE_EXECUTABLE_PATH}`;
+    logger.error(`❌ ${errorMessage}`);
+    await BotInstance.findByIdAndUpdate(instanceId, {
+      $set: { running: false, status: `Failed to start: ${errorMessage}` },
+    });
+    throw new Error(errorMessage);
+  }
+
   await connectPm2();
   const instanceIdStr = instanceId.toString();
   const processName = `freqtrade-${instanceIdStr}`;
-  logger.info(`Attempting to start Freqtrade process: ${processName}`);
+
 
   // Fetch latest instance data fresh each time
   const instance = await BotInstance.findById(instanceId).populate(
@@ -566,16 +579,17 @@ async function startFreqtradeProcess(instanceId) {
   const pm2ErrLogPath = path.join(instanceUserDataPath, "pm2_err.log");
 
   const pm2Options = {
-    script: path.resolve("./venv/Scripts/python.exe"), // Use venv python
     name: processName,
+    script: FREQTRADE_EXECUTABLE_PATH,
     args: [
       "-m",
-      "freqtrade", // <- THIS is critical
+      "freqtrade",
       "trade",
       "--config",
       configPaths.configFilePath,
       "-vv",
     ],
+    cwd: process.cwd(), // Set the current working directory to the backend root
     exec_mode: "fork",
     autorestart: false,
     out_file: pm2OutLogPath,
@@ -591,19 +605,30 @@ async function startFreqtradeProcess(instanceId) {
   logger.info(`PM2 log output: ${pm2OutLogPath}`); // Use logger
   logger.info(`PM2 error output: ${pm2ErrLogPath}`); // Use logger
   logger.debug("PM2 Start Options:", pm2Options); // Log options
+  logger.info(`[freqtradeManager] PM2 out_file: ${pm2Options.out_file}`);
+  logger.info(`[freqtradeManager] PM2 error_file: ${pm2Options.error_file}`);
+  logger.info(`[freqtradeManager] Attempting pm2.start for process: ${processName}`);
 
   // --- Start Process ---
   try {
     // PM2 start is asynchronous
+    logger.debug(`[freqtradeManager] Calling pm2.start with options: ${JSON.stringify(pm2Options, null, 2)}`);
     const apps = await new Promise((resolve, reject) => {
       pm2.start(pm2Options, (startErr, apps) => {
         if (startErr) {
-          logger.error(`PM2 start error for ${processName}:`, startErr); // Log detailed error
-          return reject(startErr); // Reject the promise on PM2 start error
+          logger.error(`PM2 start error for ${processName}:`, startErr); // Log the full error object directly
+          // Ensure startErr is always a string for consistent error messages
+          const errorToReject = startErr instanceof Error ? startErr : new Error(String(startErr));
+          errorToReject.message = `PM2 start failed for ${processName}: ${errorToReject.message || String(startErr)}`;
+          logger.error(`[freqtradeManager] PM2 start failed for ${processName}. Error: ${errorToReject.message}`);
+          return reject(errorToReject);
         }
+        logger.debug(`[freqtradeManager] pm2.start callback received apps: ${JSON.stringify(apps, null, 2)}`);
         resolve(apps); // Resolve the promise with the apps info
       });
     });
+
+    logger.debug(`[freqtradeManager] pm2.start promise resolved with apps: ${JSON.stringify(apps, null, 2)}`);
 
     // Check if PM2 actually started the process (apps array might be empty on some errors)
     if (
@@ -612,12 +637,11 @@ async function startFreqtradeProcess(instanceId) {
       !apps[0]?.pm2_env ||
       apps[0].pm2_env.status !== "online"
     ) {
+      const pm2Status = apps?.[0]?.pm2_env?.status || "unknown";
       logger.error(
-        `PM2 failed to bring process ${processName} online. Status: ${
-          apps?.[0]?.pm2_env?.status || "unknown"
-        }`
+        `PM2 failed to bring process ${processName} online. Status: ${pm2Status}`
       );
-      throw new Error(`PM2 failed to start process ${processName}.`);
+      throw new Error(`PM2 failed to start process: ${pm2Status}. Check PM2 logs for details.`);
     }
 
     logger.info(
@@ -636,7 +660,12 @@ async function startFreqtradeProcess(instanceId) {
     // This catch block now catches errors from the pm2.start callback or the check after
     logger.error(
       `Error during PM2 process start for ${processName}:`,
-      startError
+      {
+        name: startError?.name,
+        message: startError?.message,
+        stack: startError?.stack,
+        fullError: startError, // Log the full error object for inspection
+      }
     ); // Use logger
     // Ensure DB reflects the failure
     await BotInstance.findByIdAndUpdate(instanceId, {
@@ -644,96 +673,108 @@ async function startFreqtradeProcess(instanceId) {
     });
     // Attempt cleanup in case PM2 created a failed entry
     await new Promise((resolve) => pm2.delete(processName, () => resolve()));
-    throw new Error(`Failed to start bot process: ${startError.message}`);
+    // Ensure startError is always a string for consistent error messages
+    let errorMessage = "Unknown error during PM2 process start";
+    if (startError) {
+      errorMessage = startError.message || (startError.fullError && startError.fullError.message) || String(startError);
+    }
+    throw new Error(`Failed to start bot process: ${errorMessage}. Check PM2 logs for details.`);
   }
 }
 
 // --- Stop Freqtrade Process ---
-// (stopFreqtradeProcess function remains the same as your latest version)
-async function stopFreqtradeProcess(instanceId, markInactive = false) {
+async function stopFreqtradeProcess(instanceId, markInactive = true) {
   await connectPm2();
   const instanceIdStr = instanceId.toString();
   const processName = `freqtrade-${instanceIdStr}`;
-  logger.info(`Attempting to stop PM2 process: ${processName}`); // Use logger
+
+  logger.info(`Attempting to stop PM2 process: ${processName}`);
 
   try {
-    // Stop the process
-    await new Promise((resolve, reject) => {
-      pm2.stop(processName, (err) => {
-        if (
-          err &&
-          err.message?.toLowerCase().includes("process name not found")
-        ) {
-          logger.warn(
-            // Use logger
-            `PM2 process ${processName} not found or already stopped.`
-          );
-          resolve(); // Resolve even if not found, as the goal is achieved
-        } else if (err) {
-          logger.error(`PM2 stop error for ${processName}:`, err); // Use logger
-          reject(err); // Reject on actual stop error
-        } else {
-          logger.info(`Successfully stopped PM2 process: ${processName}`); // Use logger
+    logger.debug(`[stopFreqtradeProcess] Listing PM2 processes to find ${processName}...`);
+    // Check if the process exists in PM2 before attempting to delete
+    const list = await new Promise((resolve, reject) => {
+      pm2.list((err, processes) => {
+        if (err) {
+          logger.error(`[stopFreqtradeProcess] Error listing PM2 processes:`, err);
+          return reject(err);
+        }
+        logger.debug(`[stopFreqtradeProcess] PM2 processes listed: ${processes.map(p => p.name).join(', ')}`);
+        resolve(processes);
+      });
+    });
+
+    const processExists = list.some(p => p.name === processName);
+    logger.info(`[stopFreqtradeProcess] Process ${processName} exists in PM2: ${processExists}`);
+
+    if (processExists) {
+      logger.info(`[stopFreqtradeProcess] Deleting PM2 process: ${processName}`);
+      await new Promise((resolve, reject) => {
+        pm2.delete(processName, (err) => {
+          if (err) {
+            logger.error(`[stopFreqtradeProcess] Error deleting PM2 process ${processName}:`, err);
+            return reject(new Error(`Failed to delete PM2 process: ${err.message}`));
+          }
+          logger.info(`[stopFreqtradeProcess] Successfully deleted PM2 process: ${processName}`);
           resolve();
-        }
+        });
       });
-    });
+    } else {
+      logger.warn(`[stopFreqtradeProcess] PM2 process ${processName} not found. Assuming it's already stopped or never started.`);
+    }
 
-    // Delete the process from PM2 management
-    await new Promise((resolve) => {
-      // No reject needed, just log warnings
-      pm2.delete(processName, (err) => {
-        if (
-          err &&
-          !err.message?.toLowerCase().includes("process name not found")
-        ) {
-          logger.warn(`PM2 delete warning for ${processName}: ${err.message}`); // Use logger
-        } else if (!err) {
-          logger.info(`Successfully deleted PM2 process: ${processName}`); // Use logger
-        }
-        resolve(); // Resolve regardless of delete outcome
-      });
-    });
-
-    // Update DB status
-    const updateFields = { running: false };
+    // Update BotInstance status in DB
+    const updateData = {
+      running: false,
+      status: "STOPPED",
+    };
     if (markInactive) {
-      updateFields.active = false;
+      updateData.active = false;
       logger.info(
-        // Use logger
         `Instance ${instanceIdStr} marked as inactive due to expiry/action.`
       );
     }
-    await BotInstance.findByIdAndUpdate(instanceId, { $set: updateFields });
-    logger.info(
-      // Use logger
-      `Instance ${instanceIdStr} DB status updated: running=false${
-        markInactive ? ", active=false" : ""
-      }`
+
+    logger.debug(`[stopFreqtradeProcess] Updating BotInstance ${instanceIdStr} in DB with data: ${JSON.stringify(updateData)}`);
+    const updatedInstance = await BotInstance.findByIdAndUpdate(
+      instanceId,
+      { $set: updateData },
+      { new: true }
     );
 
-    return { message: `Bot ${instanceIdStr} stopped successfully.` };
+    if (!updatedInstance) {
+      logger.warn(`[stopFreqtradeProcess] BotInstance ${instanceIdStr} not found in DB during stop process.`);
+      return { message: "Bot instance not found in database." };
+    }
+
+    logger.info(`[stopFreqtradeProcess] Bot instance ${instanceIdStr} status updated to STOPPED in DB.`);
+    return { message: `Bot "${updatedInstance.botId?.name || updatedInstance._id.toString().slice(-6)}" stopped successfully.` };
   } catch (error) {
-    // This primarily catches errors from pm2.stop
     logger.error(
-      // Use logger
-      `Error in stopFreqtradeProcess for instance ${instanceIdStr}:`,
-      error
+      `[stopFreqtradeProcess] Caught error for instance ${instanceIdStr}:`, { name: error.name, message: error.message, stack: error.stack }
     );
     // Attempt to mark as not running in DB even if PM2 failed
     try {
+      logger.warn(`[stopFreqtradeProcess] Attempting to update DB status to running: false for ${instanceIdStr} after error.`);
       await BotInstance.findByIdAndUpdate(instanceId, {
-        $set: { running: false },
+        $set: { running: false, status: `ERROR_STOPPING: ${error.message}` },
       });
+      logger.info(`[stopFreqtradeProcess] DB status updated to running: false for ${instanceIdStr}.`);
     } catch (dbError) {
       logger.error(
-        // Use logger
-        `Failed to update instance ${instanceIdStr} status after stop failure:`,
-        dbError
+        `[stopFreqtradeProcess] Failed to update instance ${instanceIdStr} status after stop failure:`, { name: dbError.name, message: dbError.message, stack: dbError.stack }
       );
     }
     // Re-throw the original error that caused the failure (likely pm2.stop error)
-    throw error;
+    if (error.message.includes("Failed to delete PM2 process: process or namespace not found") || error.message.includes("process or namespace not found")) {
+      logger.info(`[stopFreqtradeProcess] Process ${processName} was not found, but bot instance ${instanceIdStr} status updated to STOPPED in DB.`);
+      // If the process was not found, it means it's already stopped or never started, so we can consider it a success.
+      // We already updated the DB status above, so just return the success message.
+      const updatedInstanceAfterError = await BotInstance.findById(instanceId);
+      return { message: `Bot "${updatedInstanceAfterError?.botId?.name || updatedInstanceAfterError?._id.toString().slice(-6)}" stopped successfully.` };
+    } else {
+      throw error;
+    }
   }
 }
 

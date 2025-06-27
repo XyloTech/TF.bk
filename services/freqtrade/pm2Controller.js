@@ -46,15 +46,26 @@ function disconnectPm2() {
 
 // Stop Process
 async function stopProcess(processName) {
-  logger.info(`[PM2Controller] Stopping process: ${processName}`);
+  logger.info(`[PM2Controller] Attempting to stop process: ${processName}`);
   return new Promise((resolve, reject) => {
-    pm2.delete(processName, (err) => {
+    pm2.describe(processName, (err, list) => {
       if (err) {
-        logger.warn(`[PM2Controller] Could not stop ${processName}`, err);
+        logger.error(`[PM2Controller] Error describing process ${processName}:`, err);
         return reject(err);
       }
-      logger.info(`[PM2Controller] Process ${processName} stopped.`);
-      resolve();
+      if (!list || list.length === 0) {
+        logger.warn(`[PM2Controller] Process ${processName} not found, skipping stop.`);
+        return resolve(); // Resolve without error if process not found
+      }
+
+      pm2.delete(processName, (deleteErr) => {
+        if (deleteErr) {
+          logger.error(`[PM2Controller] Error stopping process ${processName}:`, deleteErr);
+          return reject(deleteErr);
+        }
+        logger.info(`[PM2Controller] Process ${processName} stopped successfully.`);
+        resolve();
+      });
     });
   });
 }
@@ -113,9 +124,9 @@ async function startBotProcess(instanceIdStr, configPath, scriptPath) {
       if (err) {
         logger.error(
           `[PM2Controller] Error starting ${processName}:`,
-          err.message
+          err
         );
-        return reject(new Error(`PM2 failed to start process: ${err.message}`));
+        return reject(new Error(`PM2 failed to start process: ${err.message || 'Unknown PM2 error'}`));
       }
       logger.info(
         `[PM2Controller] Process ${processName} started successfully.`

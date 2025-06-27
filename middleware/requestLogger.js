@@ -2,6 +2,7 @@
 const logger = require("../utils/logger");
 
 const requestLogger = (req, res, next) => {
+
   // Skip logging for health checks or other frequent endpoints
   if (req.path === "/" || req.path === "/health") {
     return next();
