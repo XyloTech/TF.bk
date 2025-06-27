@@ -11,7 +11,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class SmartScalpingDCA(IStrategy):
+class SampleEmaRsiStrategy(IStrategy):
     """
     ROI-focused version of SmartScalping strategy
     """
@@ -54,30 +54,30 @@ class SmartScalpingDCA(IStrategy):
         'exit': 'GTC'
     }
 
-    def populate_indicators(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
+    def populate_indicators(self, dataframe: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         # EMA indicators
-        df['ema20'] = ta.EMA(df['close'], timeperiod=20)
-        df['ema50'] = ta.EMA(df['close'], timeperiod=50)
+        dataframe['ema20'] = ta.EMA(dataframe['close'], timeperiod=20)  # type: ignore
+        dataframe['ema50'] = ta.EMA(dataframe['close'], timeperiod=50)  # type: ignore
         
         # RSI
-        df['rsi'] = ta.RSI(df['close'], timeperiod=14)
+        dataframe['rsi'] = ta.RSI(dataframe['close'], timeperiod=14)  # type: ignore
         
         # Stochastic
-        slowk, slowd = ta.STOCH(df['high'], df['low'], df['close'])
-        df['stoch_k'] = slowk
-        df['stoch_d'] = slowd
+        slowk, slowd = ta.STOCH(dataframe['high'], dataframe['low'], dataframe['close'])  # type: ignore
+        dataframe['stoch_k'] = slowk
+        dataframe['stoch_d'] = slowd
         
         # ATR for volatility
-        df['atr'] = ta.ATR(df, timeperiod=14)
+        dataframe['atr'] = ta.ATR(dataframe, timeperiod=14)  # type: ignore
         
         # Volume analysis
-        df['volume_ma'] = ta.SMA(df['volume'], timeperiod=20)
+        dataframe['volume_ma'] = ta.SMA(dataframe['volume'], timeperiod=20)  # type: ignore
         
-        return df
+        return dataframe
 
-    def populate_entry_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
-        df['enter_long'] = 0
-        df['enter_short'] = 0
+    def populate_entry_trend(self, dataframe: pd.DataFrame, metadata: dict) -> pd.DataFrame:
+        dataframe['enter_long'] = 0
+        dataframe['enter_short'] = 0
 
         # Focus on the best performing pairs from original backtest
         best_pairs = ['INJ/USDT', 'SOL/USDT', 'DOGE/USDT', 'AVAX/USDT', 'NEAR/USDT', 'LINK/USDT']
@@ -85,35 +85,57 @@ class SmartScalpingDCA(IStrategy):
         
         if current_pair in best_pairs:
             # More selective entry conditions
-            df.loc[
-                (df['ema20'] > df['ema50']) &  # Uptrend
-                (df['rsi'] < 50) &  # Not overbought
-                (df['rsi'] > 30) &  # Not too oversold
-                (df['close'] > df['ema20']) &  # Price above EMA20
-                (df['volume'] > df['volume_ma'] * 0.8),  # Decent volume
+            dataframe.loc[
+                (dataframe['ema20'] > dataframe['ema50']) &
+                (dataframe['rsi'] < 50) &
+                (dataframe['rsi'] > 30) &
+                (dataframe['close'] > dataframe['ema20']) &
+                (dataframe['volume'] > dataframe['volume_ma'] * 0.8),
                 'enter_long'
             ] = 1
             
-            df.loc[
-                (df['ema20'] < df['ema50']) &  # Downtrend
-                (df['rsi'] > 50) &  # Not oversold
-                (df['rsi'] < 70) &  # Not too overbought
-                (df['close'] < df['ema20']) &  # Price below EMA20
-                (df['volume'] > df['volume_ma'] * 0.8),  # Decent volume
+            dataframe.loc[
+                (dataframe['ema20'] < dataframe['ema50']) &
+                (dataframe['rsi'] > 50) &
+                (dataframe['rsi'] < 70) &
+                (dataframe['close'] < dataframe['ema20']) &
+                (dataframe['volume'] > dataframe['volume_ma'] * 0.8),
+                'enter_short'
+            ] = 1
+            # More selective entry conditions
+            dataframe.loc[
+                (dataframe['ema20'] > dataframe['ema50']) &  # Uptrend
+                (dataframe['rsi'] < 50) &  # Not overbought
+                (dataframe['rsi'] > 30) &  # Not too oversold
+                (dataframe['close'] > dataframe['ema20']) &  # Price above EMA20
+                (dataframe['volume'] > dataframe['volume_ma'] * 0.8),
+                'enter_long'
+            ] = 1
+            
+            dataframe.loc[
+                (dataframe['ema20'] < dataframe['ema50']) &  # Downtrend
+                (dataframe['rsi'] > 50) &  # Not oversold
+                (dataframe['rsi'] < 70) &  # Not too overbought
+                (dataframe['close'] < dataframe['ema20']) &  # Price below EMA20
+                (dataframe['volume'] > dataframe['volume_ma'] * 0.8),
                 'enter_short'
             ] = 1
 
-        return df
+        return dataframe
 
-    def populate_exit_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
+    def populate_exit_trend(self, dataframe: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         # No exit signals - rely completely on ROI and trailing stop
-        df['exit_long'] = 0
-        df['exit_short'] = 0
-        return df
+        dataframe['exit_long'] = 0
+        dataframe['exit_short'] = 0
+        return dataframe
+        dataframe['exit_long'] = 0
+        dataframe['exit_short'] = 0
+        return dataframe
 
     def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime,
-                        current_rate: float, current_profit: float, **kwargs) -> float:
+                        current_rate: float, current_profit: float, after_fill: bool, **kwargs) -> float | None:
         # Dynamic stoploss based on profit
+        # The 'after_fill' parameter is not used in this specific logic but is required by the interface.
         if current_profit >= 0.02:  # If we're up by 2%
             return -0.01  # Tight 1% stoploss to protect profits
         elif current_profit >= 0.01:  # If we're up by 1%
@@ -124,10 +146,16 @@ class SmartScalpingDCA(IStrategy):
 
     def adjust_trade_position(self, trade: Trade, current_time: datetime,
                               current_rate: float, current_profit: float,
-                              min_stake: float, max_stake: float, **kwargs) -> Optional[float]:
+                              min_stake: float | None, max_stake: float,
+                              current_entry_rate: float, current_exit_rate: float,
+                              current_entry_profit: float, current_exit_profit: float,
+                              **kwargs) -> Optional[float]:
         """
         Simple DCA implementation
         """
+        # The following parameters are required by the interface but not directly used in this DCA logic:
+        # current_entry_rate, current_exit_rate, current_entry_profit, current_exit_profit
+
         # Only DCA for the best performing pairs
         best_pairs = ['INJ/USDT', 'SOL/USDT', 'DOGE/USDT', 'AVAX/USDT', 'NEAR/USDT', 'LINK/USDT']
         

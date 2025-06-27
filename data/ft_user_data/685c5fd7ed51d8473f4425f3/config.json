@@ -1,0 +1,36 @@
+{
+  "max_open_trades": 3,
+  "stake_currency": "USDT",
+  "stake_amount": "unlimited",
+  "pair_whitelist": [
+    "BTC/USDT",
+    "ETH/USDT"
+  ],
+  "dry_run": true,
+  "exchange": {
+    "name": "binance",
+    "key": "euyEcw0h7K3NXl2FbjZ66k3uQC2TYoT6o4HOnjyfSkh76NoFWui2ADxU3HQTJocg",
+    "secret": "mQOBuqM8IOtvDPyoWod6vyTKDCzn8snjyF1HNCvxbpzpBl4djwuwK9qN94VqPa8D",
+    "pair_whitelist": [
+      "BTC/USDT"
+    ]
+  },
+  "strategy": "SampleEmaRsiStrategy",
+  "bot_name": "ft_685c5fd7ed51d8473f4425f3",
+  "logfile": "freqtrade_685c5fd7ed51d8473f4425f3.log",
+  "db_url": "sqlite:///C:/Users/HP1/Music/botmoon-backend/data/ft_user_data/685c5fd7ed51d8473f4425f3/tradesv3.sqlite",
+  "user_data_dir": "C:\\Users\\HP1\\Music\\botmoon-backend\\data\\ft_user_data\\685c5fd7ed51d8473f4425f3",
+  "exit_pricing": {
+    "price_type": "ohlcv",
+    "data_key": "close"
+  },
+  "entry_pricing": {
+    "price_type": "ohlcv",
+    "data_key": "open"
+  },
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "max_open_trades": 3,
+  "stake_currency": "USDT",
+  "stake_amount": "unlimited",
+  "pair_whitelist": [
+    "BTC/USDT",
+    "ETH/USDT"
+  ],
+  "dry_run": true,
+  "exchange": {
+    "name": "binance",
+    "key": "dummy_api_key",
+    "secret": "dummy_api_secret",
+    "pair_whitelist": [
+      "BTC/USDT"
+    ]
+  },
+  "strategy": "SampleEmaRsiStrategy",
+  "bot_name": "ft_685bf93cfc9039ec97d1c0f9",
+  "logfile": "freqtrade_685bf93cfc9039ec97d1c0f9.log",
+  "db_url": "sqlite:///C:/Users/HP1/Music/botmoon-backend/data/ft_user_data/685bf93cfc9039ec97d1c0f9/tradesv3.sqlite",
+  "user_data_dir": "C:\\Users\\HP1\\Music\\botmoon-backend\\data\\ft_user_data\\685bf93cfc9039ec97d1c0f9",
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 const mongoose = require("mongoose"); // Ensure Mongoose is required
 const Trade = require("../models/Trade");
 const BotInstance = require("../models/BotInstance"); // Ensure BotInstance is required
+const User = require("../models/User"); // Import User model
+const Bot = require("../models/Bot"); // Import Bot model
 const logger = require("../utils/logger"); // Require the logger
 // const { sendNotification } = require("../socket"); // Uncomment if using sockets
 
@@ -97,6 +99,10 @@ exports.getTrades = async (req, res) => {
       let profitPercentage = 0; // Default to 0
       const details = trade.tradeDetails || {}; // Handle cases where tradeDetails might be missing
 
+      const grossProfit = trade.grossProfit ?? 0;
+      const platformFee = trade.platformFee ?? 0;
+      const netProfit = trade.netProfit ?? 0;
+
       // *** START DEBUG LOGGING ***
       if (trade._id.toString() === "680cda20f8a7f092fa6ece16") {
         console.log("--- DEBUGGING TRADE 680cda... ---");
@@ -148,7 +154,10 @@ exports.getTrades = async (req, res) => {
             : "SELL", // Standardize to BUY/SELL
         entryPrice: details.entryPrice ?? 0, // Entry price
         exitPrice: details.exitPrice ?? 0, // Exit price (0 if open/missing)
-        profit: trade.profit ?? 0, // Profit amount
+        grossProfit: grossProfit,
+        platformFee: platformFee,
+        netProfit: netProfit,
+        profit: netProfit, // For backward compatibility, still provide 'profit' as net profit
         profitPercentage: parseFloat(profitPercentage.toFixed(2)), // Calculated percentage (2 decimal places)
         status: trade.status, // Added status back in case UI needs it
         timestamp: trade.createdAt.getTime(), // Creation time as epoch milliseconds
@@ -258,14 +267,63 @@ exports.createTrade = async (req, res) => {
     });
 
     // Proceed with trade creation
+    // Calculate gross profit (profit before platform fees)
+    const grossProfit = profit;
+    let platformFee = 0;
+    let netProfit = profit;
+
+    // Only apply platform fee if there's a profit
+    if (grossProfit > 0) {
+      // Fetch bot details to get the profitFee percentage
+      const bot = await Bot.findById(botInstance.botId).select("profitFee");
+      const profitFeePercentage = bot?.profitFee || 0.20; // Default to 20% if not set
+
+      platformFee = grossProfit * profitFeePercentage;
+      netProfit = grossProfit - platformFee;
+
+      // Deduct fee from user's wallet balance
+      const user = await User.findById(userId);
+      if (user) {
+        user.accountBalance -= platformFee;
+        // Pause bot if account balance falls below a threshold (e.g., 0 or a configurable minimum)
+        // This threshold can be defined in config or as a bot setting
+        const FEE_WALLET_THRESHOLD = 0; // Example threshold
+        if (user.accountBalance < FEE_WALLET_THRESHOLD) {
+          botInstance.status = "PAUSED";
+          botInstance.isActive = false; // Assuming isActive also controls bot operation
+          logger.warn({
+            operation,
+            message: `User ${userId} account balance (${user.accountBalance}) below threshold. Pausing bot instance ${botInstanceId}.`,
+            userId,
+            botInstanceId,
+          });
+        }
+        await user.save();
+      } else {
+        logger.error({
+          operation,
+          message: `User ${userId} not found when deducting fees for bot instance ${botInstanceId}.`,
+          userId,
+          botInstanceId,
+        });
+      }
+    }
+
     const trade = new Trade({
       botInstanceId,
       tradeDetails,
-      profit,
+      grossProfit: grossProfit,
+      platformFee: platformFee,
+      netProfit: netProfit,
+      profit: netProfit, // Keep 'profit' field for backward compatibility, but it now stores net profit
       status: status || "open",
     });
 
     await trade.save();
+    // Save updated bot instance status if it was paused
+    if (botInstance.isModified('status') || botInstance.isModified('isActive')) {
+      await botInstance.save();
+    }
 
     // 🔹 Send WebSocket notification (Uncomment and ensure sendNotification works if needed)
     // if (typeof sendNotification === 'function') {

@@ -8,7 +8,10 @@ const TradeSchema = new mongoose.Schema(
       required: true,
     },
     tradeDetails: { type: Object, required: true },
-    profit: { type: Number, default: 0 },
+    grossProfit: { type: Number, default: 0 },
+    platformFee: { type: Number, default: 0 },
+    netProfit: { type: Number, default: 0 },
+    profit: { type: Number, default: 0 }, // For backward compatibility, will store netProfit
     status: {
       type: String,
       enum: ["open", "closed", "cancelled"],

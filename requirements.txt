@@ -19,7 +19,6 @@ exceptiongroup==1.2.2
 fastapi==0.115.12
 freqtrade==2025.3
 numpy<1.24
-TA-Lib==0.4.31
 ccxt==4.4.77
 pandas==2.2.3
 freqtrade-client==2025.3

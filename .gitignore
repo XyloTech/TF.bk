@@ -4,8 +4,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 *.log
+# dotenv environment variables file
 .env
-.env.*
 !/.env.example
 
 # Freqtrade - IGNORE the runtime user data directory completely
