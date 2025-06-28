@@ -24,7 +24,7 @@ if (cryptoSecretKeyFromEnv.length !== 64) {
 // Configuration object
 module.exports = {
   env: process.env.NODE_ENV || "development",
-  port: process.env.PORT || 5002,
+  port: process.env.PORT || 5000,
   mongodb: {
     uri: process.env.MONGO_URI,
     options: {
@@ -39,10 +39,9 @@ module.exports = {
     secretKey: process.env.CRYPTO_SECRET_KEY,
   },
   cors: {
-    allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",").map(s => s.trim()) || [
-      "https://botmoon-pro.netlify.app/",
-      "http://localhost:3000",
-    ],
+    allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",").map((s) =>
+      s.trim()
+    ) || ["https://botmoon-pro.netlify.app/", "http://localhost:3000"],
   },
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN,
