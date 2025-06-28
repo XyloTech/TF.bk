@@ -154,6 +154,16 @@ const UserSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    // 📈 Trading Statistics
+    tradingStats: {
+      totalProfit: { type: Number, default: 0 },
+      monthlyProfitChangePercent: { type: Number, default: 0 },
+      todayProfit: { type: Number, default: 0 },
+      winRate: { type: Number, default: 0 }, // Expecting 0-100
+      tradesCount: { type: Number, default: 0 },
+      averageFeePerTrade: { type: Number, default: 0 },
+    },
   },
   { timestamps: true }
 );

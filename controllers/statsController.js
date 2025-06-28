@@ -88,6 +88,7 @@ exports.getTradingStats = async (req, res) => {
                 winningTrades: {
                   $sum: { $cond: [{ $gt: ["$profit", 0] }, 1, 0] },
                 },
+                totalFees: { $sum: "$fee" }, // Add total fees
               },
             },
           ],
@@ -156,6 +157,7 @@ exports.getTradingStats = async (req, res) => {
           winningTrades: {
             $ifNull: [{ $first: "$overallClosed.winningTrades" }, 0],
           },
+          totalFees: { $ifNull: [{ $first: "$overallClosed.totalFees" }, 0] }, // Project total fees
           todayProfit: { $ifNull: [{ $first: "$todayClosed.todayProfit" }, 0] },
           activePositions: {
             $ifNull: [{ $first: "$activePositions.count" }, 0],
@@ -177,6 +179,7 @@ exports.getTradingStats = async (req, res) => {
       totalProfit = 0,
       totalTradesCount = 0,
       winningTrades = 0,
+      totalFees = 0, // Destructure totalFees
       todayProfit = 0,
       activePositions = 0,
       currentMonthProfit = 0,
@@ -200,6 +203,9 @@ exports.getTradingStats = async (req, res) => {
       monthlyProfitChangePercent = null; // Or Infinity, or 10000 etc. Null is often clearer.
     } // If both are 0 or current is negative/zero when last was 0, change is 0%
 
+    // Calculate Average Fee Per Trade
+    const averageFeePerTrade = totalTradesCount > 0 ? totalFees / totalTradesCount : 0;
+
     const finalStats = {
       totalProfit,
       todayProfit,
@@ -207,6 +213,7 @@ exports.getTradingStats = async (req, res) => {
       tradesCount: totalTradesCount, // Send the count of *closed* trades
       activePositions,
       monthlyProfitChangePercent, // Can be null
+      averageFeePerTrade, // Add average fee per trade
     };
 
     logger.info({
