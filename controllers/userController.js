@@ -1,5 +1,7 @@
 const User = require("../models/User");
+const Trade = require("../models/Trade");
 const Referral = require("../models/Referral"); // Import Referral model
+const { startOfDay, endOfDay, startOfMonth, subMonths } = require('date-fns');
 const logger = require("../utils/logger"); // Assuming logger exists
 
 // 🔹 Get User Profile
@@ -10,7 +12,10 @@ exports.getProfile = async (req, res) => {
       .json({ message: "Authentication error: User not found." });
   }
   // userDB is transformed by toJSON in the model
-  res.json(req.userDB);
+  const tradingStats = await getTradingStats(req.userDB._id);
+  const userProfile = req.userDB.toJSON();
+  userProfile.tradingStats = tradingStats;
+  res.json(userProfile);
 };
 
 // 🔹 Update User Profile (Non-sensitive fields)
@@ -243,6 +248,107 @@ exports.getMyReferralInfo = async (req, res) => {
       },
     ]);
     console.log("referralStats:", referralStats);
+
+
+// 🔹 Helper function to calculate trading statistics
+async function getTradingStats(userId) {
+  try {
+    const stats = await Trade.aggregate([
+      { $match: { botInstanceId: { $in: await User.distinct('botInstances', { _id: userId }) } } }, // Match trades for user's bot instances
+      { $group: {
+        _id: null,
+        totalProfit: { $sum: "$netProfit" },
+        tradesCount: { $sum: 1 },
+        winningTrades: { $sum: { $cond: [ { $gt: ["$netProfit", 0] }, 1, 0 ] } },
+        totalFees: { $sum: "$platformFee" }
+      }}
+    ]);
+
+    const result = stats[0] || {};
+
+    const totalProfit = result.totalProfit || 0;
+    const tradesCount = result.tradesCount || 0;
+    const winningTrades = result.winningTrades || 0;
+    const totalFees = result.totalFees || 0;
+
+    const winRate = tradesCount > 0 ? (winningTrades / tradesCount) * 100 : 0;
+    const averageFeePerTrade = tradesCount > 0 ? totalFees / tradesCount : 0;
+
+    // For todayProfit and monthlyProfitChangePercent, more complex date-based aggregation is needed.
+    // For now, we'll return placeholders.
+    const today = new Date();
+    const startOfToday = startOfDay(today);
+    const endOfToday = endOfDay(today);
+
+    const todayStats = await Trade.aggregate([
+      { $match: {
+          botInstanceId: { $in: await User.distinct('botInstances', { _id: userId }) },
+          createdAt: { $gte: startOfToday, $lte: endOfToday }
+      }},
+      { $group: {
+          _id: null,
+          todayProfit: { $sum: "$netProfit" }
+      }}
+    ]);
+    const todayProfit = todayStats[0]?.todayProfit || 0;
+
+    const startOfCurrentMonth = startOfMonth(today);
+    const startOfPreviousMonth = startOfMonth(subMonths(today, 1));
+    const endOfPreviousMonth = subMonths(startOfCurrentMonth, 1);
+
+    const currentMonthStats = await Trade.aggregate([
+      { $match: {
+          botInstanceId: { $in: await User.distinct('botInstances', { _id: userId }) },
+          createdAt: { $gte: startOfCurrentMonth }
+      }},
+      { $group: {
+          _id: null,
+          profit: { $sum: "$netProfit" }
+      }}
+    ]);
+    const currentMonthProfit = currentMonthStats[0]?.profit || 0;
+
+    const previousMonthStats = await Trade.aggregate([
+      { $match: {
+          botInstanceId: { $in: await User.distinct('botInstances', { _id: userId }) },
+          createdAt: { $gte: startOfPreviousMonth, $lte: endOfPreviousMonth }
+      }},
+      { $group: {
+          _id: null,
+          profit: { $sum: "$netProfit" }
+      }}
+    ]);
+    const previousMonthProfit = previousMonthStats[0]?.profit || 0;
+
+    let monthlyProfitChangePercent = 0;
+    if (previousMonthProfit !== 0) {
+      monthlyProfitChangePercent = ((currentMonthProfit - previousMonthProfit) / previousMonthProfit) * 100;
+    } else if (currentMonthProfit > 0) {
+      monthlyProfitChangePercent = 100; // If previous month was 0 and current is positive
+    } else if (currentMonthProfit < 0) {
+      monthlyProfitChangePercent = -100; // If previous month was 0 and current is negative
+    }
+
+    return {
+      totalProfit: parseFloat(totalProfit.toFixed(2)),
+      todayProfit: parseFloat(todayProfit.toFixed(2)),
+      winRate: parseFloat(winRate.toFixed(2)),
+      tradesCount: tradesCount,
+      averageFeePerTrade: parseFloat(averageFeePerTrade.toFixed(2)),
+      monthlyProfitChangePercent: parseFloat(monthlyProfitChangePercent.toFixed(2))
+    };
+
+  } catch (error) {
+    logger.error({
+      operation: "getTradingStats",
+      userId: userId,
+      error: error.message,
+      stack: error.stack,
+    });
+    return {}; // Return empty object on error
+  }
+}
+
 
     res.json({
       success: true,
