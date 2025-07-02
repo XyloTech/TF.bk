@@ -253,6 +253,7 @@ exports.getMyReferralInfo = async (req, res) => {
       },
     ]);
     console.log("referralStats:", referralStats);
+ main
 
 
 // 🔹 Helper function to calculate trading statistics
@@ -356,6 +357,7 @@ async function getTradingStats(userId) {
   }
 }
 
+ master
 
     res.json({
       success: true,

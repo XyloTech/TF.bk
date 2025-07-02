@@ -39,10 +39,16 @@ module.exports = {
     secretKey: process.env.CRYPTO_SECRET_KEY,
   },
   cors: {
+ main
     allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",").map(s => s.trim()) || [
       "https://botmoon-pro.netlify.app/",
       "http://localhost:3000",
     ],
+
+    allowedOrigins: process.env.ALLOWED_ORIGINS?.split(",").map((s) =>
+      s.trim()
+    ) || ["https://botmoon-pro.netlify.app/", "http://localhost:3000"],
+ master
   },
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN,

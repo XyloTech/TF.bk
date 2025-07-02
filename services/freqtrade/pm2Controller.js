@@ -127,7 +127,10 @@ async function startBotProcess(instanceIdStr, configPath, scriptPath) {
           `[PM2Controller] Error starting ${processName}:`,
           err
         );
+ main
         logger.error(`[PM2Controller] PM2 start error details:`, err.message);
+
+ master
         return reject(new Error(`PM2 failed to start process: ${err.message || 'Unknown PM2 error'}`));
       }
       logger.info(
