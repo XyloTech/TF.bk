@@ -133,13 +133,24 @@ async function generateInstanceConfig(instance) {
   const merged = merge({}, templateDefaults, userConfig, backendConfig);
 
   // Ensure exit_pricing and entry_pricing are present
+  // These are minimal defaults to satisfy schema validation if not provided elsewhere
   merged.exit_pricing = merged.exit_pricing || {
     price_type: "ohlcv",
     data_key: "close",
+    use_exit_signal: true,
+    allow_df_rate_limit: false
   };
   merged.entry_pricing = merged.entry_pricing || {
     price_type: "ohlcv",
     data_key: "open",
+    price_side: "same",
+    use_order_book: false,
+    order_book_top: 1,
+    price_last_balance: 0.0,
+    check_depth_of_market: {
+      enabled: false,
+      bids_to_ask_delta: 1
+    }
   };
 
   // --- Apply Defaults & Validation ---

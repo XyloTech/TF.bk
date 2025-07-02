@@ -152,6 +152,16 @@ async function startServer() {
     initializePm2EventMonitor();
     console.log(" PM2 Event Monitor initialized"); // Use logger.info
 
+    // Temporary: Start a specific freqtrade process for debugging
+    const debugInstanceId = '685c5fd7ed51d8473f4425f3'; // Replace with an actual instance ID from your data/ft_user_data
+    logger.info(`[Server] Attempting to start debug Freqtrade instance: ${debugInstanceId}`);
+    try {
+      await require('./services/freqtrade').startFreqtradeProcess(debugInstanceId);
+      logger.info(`[Server] Debug Freqtrade instance ${debugInstanceId} started successfully.`);
+    } catch (debugError) {
+      logger.error(`[Server] Failed to start debug Freqtrade instance ${debugInstanceId}: ${debugError.message}`, { stack: debugError.stack });
+    }
+
     // 3. Setup WebSocket Server
     setupSocket(server); // setupSocket comes from your ./socket.js
     console.log(" WebSocket server initialized"); // Use logger.info

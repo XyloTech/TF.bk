@@ -12,7 +12,12 @@ exports.getProfile = async (req, res) => {
       .json({ message: "Authentication error: User not found." });
   }
   // userDB is transformed by toJSON in the model
-  const tradingStats = await getTradingStats(req.userDB._id);
+  let tradingStats = {};
+  try {
+    tradingStats = await getTradingStats(req.userDB._id);
+  } catch (err) {
+    console.warn({ message: "Trading stats failed", error: err.message }); // Using console.warn as logger might not be imported
+  }
   const userProfile = req.userDB.toJSON();
   userProfile.tradingStats = tradingStats;
   res.json(userProfile);
@@ -253,8 +258,10 @@ exports.getMyReferralInfo = async (req, res) => {
 // 🔹 Helper function to calculate trading statistics
 async function getTradingStats(userId) {
   try {
+    const botInstanceIds = await User.findById(userId).distinct('botInstances');
+
     const stats = await Trade.aggregate([
-      { $match: { botInstanceId: { $in: await User.distinct('botInstances', { _id: userId }) } } }, // Match trades for user's bot instances
+      { $match: { botInstanceId: { $in: botInstanceIds } } }, // Match trades for user's bot instances
       { $group: {
         _id: null,
         totalProfit: { $sum: "$netProfit" },
@@ -282,7 +289,7 @@ async function getTradingStats(userId) {
 
     const todayStats = await Trade.aggregate([
       { $match: {
-          botInstanceId: { $in: await User.distinct('botInstances', { _id: userId }) },
+          botInstanceId: { $in: botInstanceIds },
           createdAt: { $gte: startOfToday, $lte: endOfToday }
       }},
       { $group: {
@@ -298,7 +305,7 @@ async function getTradingStats(userId) {
 
     const currentMonthStats = await Trade.aggregate([
       { $match: {
-          botInstanceId: { $in: await User.distinct('botInstances', { _id: userId }) },
+          botInstanceId: { $in: botInstanceIds },
           createdAt: { $gte: startOfCurrentMonth }
       }},
       { $group: {
@@ -310,7 +317,7 @@ async function getTradingStats(userId) {
 
     const previousMonthStats = await Trade.aggregate([
       { $match: {
-          botInstanceId: { $in: await User.distinct('botInstances', { _id: userId }) },
+          botInstanceId: { $in: botInstanceIds },
           createdAt: { $gte: startOfPreviousMonth, $lte: endOfPreviousMonth }
       }},
       { $group: {

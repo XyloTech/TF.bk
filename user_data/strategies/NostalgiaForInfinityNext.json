@@ -1,0 +1,38 @@
+{
+  "strategy_name": "NostalgiaForInfinityNext",
+  "params": {
+    "trailing": {
+      "trailing_stop": true,
+      "trailing_stop_positive": 0.01,
+      "trailing_stop_positive_offset": 0.02,
+      "trailing_only_offset_is_reached": true
+    },
+    "max_open_trades": {
+      "max_open_trades": 3
+    },
+    "buy": {
+      "buy_cti_enable": true,
+      "buy_cti_value": -0.29,
+      "buy_rsi_enable": false,
+      "buy_rsi_value": 18.8
+    },
+    "sell": {
+      "sell_cti_enable": true,
+      "sell_cti_value": -0.43,
+      "sell_rsi_enable": true,
+      "sell_rsi_value": 70.7
+    },
+    "protection": {},
+    "roi": {
+      "0": 0.069,
+      "7": 0.03,
+      "14": 0.004,
+      "35": 0
+    },
+    "stoploss": {
+      "stoploss": -0.273
+    }
+  },
+  "ft_stratparam_v": 1,
+  "export_time": "2025-07-01 13:49:27.565705+00:00"
+}

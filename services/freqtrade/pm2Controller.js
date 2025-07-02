@@ -75,7 +75,7 @@ async function startBotProcess(instanceIdStr, configPath, scriptPath) {
   const processName = `freqtrade-${instanceIdStr}`;
   logger.info(`[PM2Controller] Starting Freqtrade instance: ${processName}`);
 
-  const absolutePythonPath = path.resolve(scriptPath);
+  const absolutePythonPath = path.resolve(process.cwd(), scriptPath);
   const absoluteConfigPath = path.resolve(configPath);
   const strategyPath = path.join(
     absoluteUserDataBaseDir,
@@ -118,6 +118,7 @@ async function startBotProcess(instanceIdStr, configPath, scriptPath) {
   logger.debug(
     `[PM2Controller] PM2 Launch Command: ${opts.script} ${opts.args.join(" ")}`
   );
+  logger.info(`[PM2Controller] Attempting to start process ${processName} with command: ${opts.script} ${opts.args.join(' ')}`);
 
   return new Promise((resolve, reject) => {
     pm2.start(opts, (err, apps) => {
@@ -126,6 +127,7 @@ async function startBotProcess(instanceIdStr, configPath, scriptPath) {
           `[PM2Controller] Error starting ${processName}:`,
           err
         );
+        logger.error(`[PM2Controller] PM2 start error details:`, err.message);
         return reject(new Error(`PM2 failed to start process: ${err.message || 'Unknown PM2 error'}`));
       }
       logger.info(

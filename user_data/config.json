@@ -1,0 +1,9 @@
+{
+  "exchange": {
+    "name": "binance",
+    "ccxt_config": {},
+    "ccxt_async_config": {},
+    "type": "spot"
+  },
+  "data_dir": "user_data/data/binance"
+}

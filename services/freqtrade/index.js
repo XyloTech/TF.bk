@@ -30,7 +30,14 @@ async function startFreqtradeProcess(instanceId) {
   const { configFilePath } = await generateInstanceConfig(instance);
   const PYTHON_BIN = path.resolve("./venv/Scripts/python.exe");
 
-  await startBotProcess(instanceId.toString(), configFilePath, PYTHON_BIN);
+  logger.info(`[FreqtradeService] Calling startBotProcess for instance ${instanceId} with config: ${configFilePath}, python_bin: ${PYTHON_BIN}`);
+  try {
+    await startBotProcess(instanceId.toString(), configFilePath, PYTHON_BIN);
+    logger.info(`[FreqtradeService] startBotProcess for instance ${instanceId} completed successfully.`);
+  } catch (error) {
+    logger.error(`[FreqtradeService] Error calling startBotProcess for instance ${instanceId}: ${error.message}`, { stack: error.stack });
+    throw error; // Re-throw to propagate the error
+  }
 
   await BotInstance.findByIdAndUpdate(instanceId, {
     $set: { running: true, lastExecuted: new Date() },
