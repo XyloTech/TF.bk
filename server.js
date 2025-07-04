@@ -12,10 +12,12 @@ const rateLimit = require("express-rate-limit");
 const slowDown = require("express-slow-down");
 const config = require("./config/config");
 const logger = require("./utils/logger"); // Ensure logger is available early
+
 require('./config/firebase'); // Initialize Firebase Admin SDK
 
 const backtestRoutes = require('./routes/backtestRoutes');
 const orderRoutes = require('./routes/orderRoutes');
+
 
 // --- Middleware ---
 const errorHandler = require("./middleware/errorHandler");
@@ -36,31 +38,42 @@ const app = express();
 // Trust the first proxy hop (common for platforms like Render, Heroku)
 app.set("trust proxy", 1);
 
-const http = require('http');
+const http = require("http");
+
 const server = http.createServer(app);
 
 // mongoose.set("debug", true); // Keep this for dev, consider removing for prod
 // --- Core Middleware ---
-app.use(express.json({
-  limit: "1mb",
-  verify: (req, res, buf) => {
-    if (req.originalUrl === '/api/payments/webhook') {
-      req.rawBody = buf.toString();
-    }
-  },
-}));
-app.use(express.raw({ type: 'application/json', limit: '1mb' }));
+app.use(
+  express.json({
+    limit: "1mb",
+    verify: (req, res, buf) => {
+      if (req.originalUrl === "/api/payments/webhook") {
+        req.rawBody = buf.toString();
+      }
+    },
+  })
+);
+app.use(express.raw({ type: "application/json", limit: "1mb" }));
 app.use(securityHeaders); // Your custom security headers from middleware
 // app.use(helmet()); // If securityHeaders isn't a full replacement for helmet, you might want both or to integrate.
-const requestLogger = require('./middleware/requestLogger');
+const requestLogger = require("./middleware/requestLogger");
+
 app.use(requestLogger);
 
 // --- CORS Configuration ---
 app.use(
   cors({
     origin: function (origin, callback) {
-      const allowedOrigins = ['http://localhost:3000', 'http://localhost:5000', ...(config.cors.allowedOrigins || [])];
-      console.log(`CORS Debug - Origin: ${origin}, Allowed: ${allowedOrigins.join(', ')}`);
+      const allowedOrigins = [
+        "http://localhost:3000",
+        "http://localhost:5000",
+        ...(config.cors.allowedOrigins || []),
+      ];
+      console.log(
+        `CORS Debug - Origin: ${origin}, Allowed: ${allowedOrigins.join(", ")}`
+      );
+
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -104,8 +117,8 @@ app.use("/api/webhooks", require("./routes/webhookRoutes"));
 app.use("/api/charts", require("./routes/chartRoutes"));
 app.use("/api/stats", require("./routes/statsRoutes"));
 
-app.use('/api/backtest', backtestRoutes);
-app.use('/api/order', orderRoutes);
+app.use("/api/backtest", backtestRoutes);
+app.use("/api/order", orderRoutes);
 
 // --- Not Found Handler (for API routes) ---
 app.use("/api/*", (req, res, next) => {
@@ -151,7 +164,6 @@ async function startServer() {
     // This function will internally call pm2.launchBus()
     initializePm2EventMonitor();
     console.log(" PM2 Event Monitor initialized"); // Use logger.info
-
     // Temporary: Start a specific freqtrade process for debugging
     const debugInstanceId = '685c5fd7ed51d8473f4425f3'; // Replace with an actual instance ID from your data/ft_user_data
     logger.info(`[Server] Attempting to start debug Freqtrade instance: ${debugInstanceId}`);
@@ -171,7 +183,8 @@ async function startServer() {
     console.log(" Scheduler initialized"); // Use logger.info
 
     // 5. Start HTTP Server
-    const PORT = process.env.PORT || 5002;
+
+    const PORT = process.env.PORT || 5000;
     server.listen(PORT, () => {
       logger.info(` Server running on port ${PORT} (${config.env} mode)`);
       logger.info(`🟢 Application ready! Access at http://localhost:${PORT}`);
@@ -183,6 +196,9 @@ async function startServer() {
       // Re-throw the error to be caught by the outer try-catch block
       throw err;
     });
+
+
+
   } catch (error) {
     console.error("❌ Server startup failed:", error); // Use logger.fatal or logger.error
     // Attempt graceful shutdown
@@ -208,6 +224,7 @@ async function gracefulShutdown(signal) {
   // Close HTTP server to stop accepting new connections
   server.close(async () => {
     console.log("🚪 HTTP server closed."); // logger.info
+ main
 
     // Disconnect MongoDB after server is closed
     try {
@@ -217,6 +234,17 @@ async function gracefulShutdown(signal) {
       console.error("Error disconnecting MongoDB:", err); // logger.error
     }
 
+
+
+    // Disconnect MongoDB after server is closed
+    try {
+      await mongoose.disconnect();
+      console.log("🔌 MongoDB disconnected."); // logger.info
+    } catch (err) {
+      console.error("Error disconnecting MongoDB:", err); // logger.error
+    }
+
+ master
     console.log("🏁 Shutdown complete."); // logger.info
     process.exit(0);
   });

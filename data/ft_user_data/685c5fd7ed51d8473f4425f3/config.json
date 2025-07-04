@@ -12,6 +12,7 @@
     "key": "euyEcw0h7K3NXl2FbjZ66k3uQC2TYoT6o4HOnjyfSkh76NoFWui2ADxU3HQTJocg",
     "secret": "mQOBuqM8IOtvDPyoWod6vyTKDCzn8snjyF1HNCvxbpzpBl4djwuwK9qN94VqPa8D",
     "pair_whitelist": [
+ main
       "BTC/USDT",
       "ETH/USDT"
   ]
@@ -28,6 +29,20 @@
   "strategy_path": "C:\\Users\\HP1\\Music\\botmoon-backend\\user_data\\strategies",
   "data_dir": "C:\\Users\\HP1\\Music\\botmoon-backend\\data\\ft_user_data\\685c5fd7ed51d8473f4425f3\\data",
 
+
+      "BTC/USDT"
+    ]
+  },
+  "strategy": "SampleEmaRsiStrategy",
+  "bot_name": "ft_685c5fd7ed51d8473f4425f3",
+  "logfile": "freqtrade_685c5fd7ed51d8473f4425f3.log",
+  "db_url": "sqlite:///C:/Users/HP1/Music/botmoon-backend/data/ft_user_data/685c5fd7ed51d8473f4425f3/tradesv3.sqlite",
+  "user_data_dir": "C:\\Users\\HP1\\Music\\botmoon-backend\\data\\ft_user_data\\685c5fd7ed51d8473f4425f3",
+  "exit_pricing": {
+    "price_type": "ohlcv",
+    "data_key": "close"
+  },
+ master
   "entry_pricing": {
     "price_type": "ohlcv",
     "data_key": "open"
@@ -36,6 +51,7 @@
     {
       "method": "StaticPairList"
     }
+ main
   ],
   "api_server": {
     "enabled": true,
@@ -45,4 +61,7 @@
     "password": "ft_password",
             "jwt_secret_key": "your_very_secret_jwt_key_here"
         }
+
+  ]
+ master
 }

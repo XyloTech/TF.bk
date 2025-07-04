@@ -1,4 +1,4 @@
-const admin = require("firebase-admin");
+const admin = require('firebase-admin');
 const path = require("path");
 const fs = require("fs");
 const logger = require("../utils/logger");
@@ -18,12 +18,10 @@ const serviceAccount = {
   "universe_domain": "googleapis.com"
 };
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
-}
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
 
-logger.info(" Firebase Admin SDK initialized successfully.");
+
 
 module.exports = admin;

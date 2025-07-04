@@ -138,11 +138,12 @@ async function generateInstanceConfig(instance) {
     price_type: "ohlcv",
     data_key: "close",
     use_exit_signal: true,
-    allow_df_rate_limit: false
+    allow_df_rate_limit: false,
   };
   merged.entry_pricing = merged.entry_pricing || {
     price_type: "ohlcv",
     data_key: "open",
+
     price_side: "same",
     use_order_book: false,
     order_book_top: 1,
@@ -151,6 +152,7 @@ async function generateInstanceConfig(instance) {
       enabled: false,
       bids_to_ask_delta: 1
     }
+
   };
 
   // --- Apply Defaults & Validation ---
@@ -193,10 +195,15 @@ async function generateInstanceConfig(instance) {
   );
 
   const content = JSON.stringify(merged, null, 2);
-  await fs.writeFile(configFilePath, content);
-  logger.debug(
-    `[ConfigBuilder] Successfully wrote final config for instance ${instanceIdStr} to: ${configFilePath}`
-  );
+
+  // Wrap the await call in an async function
+  async function writeConfigFile() {
+    await fs.writeFile(configFilePath, content);
+    logger.debug(
+      `[ConfigBuilder] Successfully wrote final config for instance ${instanceIdStr} to: ${configFilePath}`
+    );
+  }
+  writeConfigFile();
 
   // --- Return Results ---
   logger.debug(
@@ -208,7 +215,8 @@ async function generateInstanceConfig(instance) {
     instanceDir, // This is now an absolute path
     strategyName,
   };
-}
+
+};
 
 module.exports = {
   generateInstanceConfig,

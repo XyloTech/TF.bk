@@ -12,4 +12,6 @@ router.get("/", authenticateUser, getTransactions);
 router.post("/", authenticateUser, createTransaction);
 router.get("/wallet-amounts", authenticateUser, rechargeAmount); // Add this route
 
+router.get("/recharge-amount", authenticateUser, rechargeAmount);
+
 module.exports = router;
