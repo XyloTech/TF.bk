@@ -221,7 +221,7 @@ exports.getMyReferralInfo = async (req, res) => {
     //       _id: null, // Group all referrals for this user
     //       totalReferrals: { $sum: 1 },
     //       successfulReferrals: { $sum: { $cond: ["$purchaseMade", 1, 0] } }, // Count referrals where purchase was made
-    //       totalCommission: { $sum: "$commissionAmount" },
+    //       totalCommissionEarned: { $sum: "$commissionAmount" },
     //     },
     //   },
     // ]);
@@ -253,8 +253,7 @@ exports.getMyReferralInfo = async (req, res) => {
       },
     ]);
     console.log("referralStats:", referralStats);
- main
-
+    logger.info({ operation, message: "Returning referral info", userId, referralCode: user.referralCode, referralLink: user.referralLink, stats: referralStats[0] });
 
 // 🔹 Helper function to calculate trading statistics
 async function getTradingStats(userId) {
@@ -357,18 +356,15 @@ async function getTradingStats(userId) {
   }
 }
 
- master
-
-    res.json({
-      success: true,
-      referralCode: user.referralCode,
-      referralLink: user.referralLink,
-      stats: referralStats[0] || {
-        totalReferrals: 0,
-        successfulReferrals: 0,
-        totalCommission: 0,
-      }, // Provide defaults if no stats
-    });
+      res.json({
+        referralCode: user.referralCode,
+        referralLink: user.referralLink,
+        stats: {
+          totalReferrals: referralStats.length > 0 ? referralStats[0].totalReferrals : 0,
+          successfulReferrals: referralStats.length > 0 ? referralStats[0].successfulReferrals : 0,
+          totalCommissionEarned: referralStats.length > 0 ? referralStats[0].totalCommissionEarned : 0,
+        },
+      });
   } catch (error) {
     logger.error({
       operation,

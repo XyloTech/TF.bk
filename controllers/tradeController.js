@@ -266,23 +266,73 @@ exports.createTrade = async (req, res) => {
       userId,
     });
 
-    // Proceed with trade creation
+    // Fetch the user to check account balance and other statuses
+    const user = await User.findById(userId);
+    if (!user) {
+      logger.error({
+        operation,
+        message: `User ${userId} not found during trade creation.`,
+        userId,
+        botInstanceId,
+      });
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // --- Implement Trade Blocking Logic ---
+
+    // 1. Block trades if the bot is manually disabled (status check)
+    if (botInstance.status === "PAUSED" || botInstance.isActive === false) {
+      logger.warn({
+        operation,
+        message: `Trade blocked: Bot instance ${botInstanceId} is paused or inactive.`,
+        botInstanceId,
+        userId,
+      });
+      return res.status(403).json({ message: "Trading is currently disabled for this bot instance." });
+    }
+
+    // 2. Stop trading when the demo account period expires
+    if (botInstance.accountType === "demo" && botInstance.expiryDate && new Date() > botInstance.expiryDate) {
+      logger.warn({
+        operation,
+        message: `Trade blocked: Demo account for bot instance ${botInstanceId} has expired.`,
+        botInstanceId,
+        userId,
+      });
+      // Optionally, update bot instance status to inactive/expired
+      botInstance.status = "EXPIRED";
+      botInstance.isActive = false;
+      await botInstance.save();
+      return res.status(403).json({ message: "Your demo account has expired. Please upgrade to a paid plan to continue trading." });
+    }
+
+    // 3. Block trades if account balance is too low (< ₹100) or too high (> ₹20,000)
+
+
     // Calculate gross profit (profit before platform fees)
     const grossProfit = profit;
-    let platformFee = 0;
     let netProfit = profit;
+    let platformFee = 0;
 
-    // Only apply platform fee if there's a profit
+    // 4. Block trades if fee balance is insufficient (assuming accountBalance covers fees)
     if (grossProfit > 0) {
-      // Fetch bot details to get the profitFee percentage
       const bot = await Bot.findById(botInstance.botId).select("profitFee");
       const profitFeePercentage = bot?.profitFee || 0.20; // Default to 20% if not set
-
       platformFee = grossProfit * profitFeePercentage;
+
+      if (user.accountBalance < platformFee) {
+        logger.warn({
+          operation,
+          message: `Trade blocked: User ${userId} account balance (${user.accountBalance}) is insufficient for platform fee (${platformFee}).`,
+          userId,
+          botInstanceId,
+        });
+        return res.status(403).json({ message: "Insufficient balance to cover trade fees." });
+      }
+
       netProfit = grossProfit - platformFee;
 
       // Deduct fee from user's wallet balance
-      const user = await User.findById(userId);
       if (user) {
         user.accountBalance -= platformFee;
         // Pause bot if account balance falls below a threshold (e.g., 0 or a configurable minimum)
@@ -344,7 +394,8 @@ exports.createTrade = async (req, res) => {
       tradeId: trade._id,
     });
     res.status(201).json(trade);
-  } catch (error) {
+  }
+  catch (error) {
     const botInstanceIdForLog = req.body.botInstanceId || "UNKNOWN_INSTANCE";
     const userIdForLog = req.userDB?._id || "UNKNOWN_USER";
     logger.error({
